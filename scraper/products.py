@@ -15,7 +15,7 @@ import httpx
 from bs4 import BeautifulSoup
 from sqlalchemy import select
 
-from config import BASE_URL, REQUEST_DELAY
+from config import BASE_URL, REQUEST_DELAY, CONCURRENT_PAGES
 from db.database import AsyncSessionLocal, init_db
 from db.models import Category, Brand, Product
 
@@ -320,23 +320,29 @@ async def scrape_all_categories():
             result = await session.execute(select(Category))
             categories = result.scalars().all()
 
-    logger.info("Scraping products from %d categories", len(categories))
+    logger.info("Scraping products from %d categories (%d concurrent)", len(categories), CONCURRENT_PAGES)
+
+    semaphore = asyncio.Semaphore(CONCURRENT_PAGES)
+    total_count = {"n": 0}
+
+    async def _scrape_category(client, cat):
+        async with semaphore:
+            logger.info("Category: %s", cat.name)
+            products = await scrape_category_products(client, cat.url)
+            if products:
+                await save_products(products, cat.id)
+                total_count["n"] += len(products)
+            await asyncio.sleep(REQUEST_DELAY)
 
     async with httpx.AsyncClient(
         headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"},
         timeout=30,
     ) as client:
-        total = 0
-        for cat in categories:
-            logger.info("Category: %s", cat.name)
-            products = await scrape_category_products(client, cat.url)
-            if products:
-                await save_products(products, cat.id)
-                total += len(products)
-            await asyncio.sleep(REQUEST_DELAY)
+        tasks = [_scrape_category(client, cat) for cat in categories]
+        await asyncio.gather(*tasks)
 
-    logger.info("Total products scraped: %d", total)
-    return total
+    logger.info("Total products scraped: %d", total_count["n"])
+    return total_count["n"]
 
 
 async def run():
