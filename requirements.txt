@@ -1,0 +1,28 @@
+# HTTP & parsing
+httpx[http2]>=0.27
+beautifulsoup4>=4.12
+lxml>=5.1
+
+# Browser automation
+playwright>=1.44
+
+# Database
+sqlalchemy>=2.0
+asyncpg>=0.30
+
+# API
+fastapi>=0.111
+uvicorn[standard]>=0.30
+pydantic>=2.7
+
+# Export
+openpyxl>=3.1
+
+# Scheduling
+apscheduler>=3.10
+
+# CAPTCHA solving
+2captcha-python>=1.5
+
+# Utils
+python-dotenv>=1.0
