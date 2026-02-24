@@ -100,7 +100,7 @@ def extract_datalayer_products(html: str) -> list[dict]:
             "base_price": _parse_price(item.get("base_price")),
             "special": _parse_price(item.get("special")),
             "stock": int(item.get("stock", item.get("quantity", 0)) or 0),
-            "in_stock": item.get("availability", "") != "OutOfStock"
+            "in_stock": "OutOfStock" not in str(item.get("availability", ""))
                 if item.get("availability")
                 else int(item.get("stock", item.get("quantity", 0)) or 0) > 0,
         }

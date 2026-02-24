@@ -46,26 +46,39 @@ async def extract_product_details(page: Page) -> dict:
 
     if datalayer:
         logger.debug("datalayer keys: %s", list(datalayer.keys()) if isinstance(datalayer, dict) else type(datalayer))
-        products = (
-            datalayer.get("products_listed")
-            or datalayer.get("products")
-            or datalayer.get("items")
-            or []
-        )
-        if isinstance(products, dict):
-            products = list(products.values())
 
-        # Also try product_detail / product (singular) keys
-        if not products:
-            single = datalayer.get("product_detail") or datalayer.get("product")
-            if single:
-                products = [single]
+        item = None
 
-        if products:
-            raw_item = products[0] if isinstance(products, list) else products
-            # Unwrap {"product": {...}} wrapper
-            item = raw_item.get("product", raw_item) if isinstance(raw_item, dict) else raw_item
-            logger.debug("datalayer item keys: %s", list(item.keys()) if isinstance(item, dict) else type(item))
+        # Product detail pages: data is in product_details.product
+        pd = datalayer.get("product_details")
+        if isinstance(pd, dict) and pd.get("product"):
+            item = pd["product"]
+            logger.debug("Found product in product_details.product")
+
+        # Category/listing pages: data is in products_listed / products / items
+        if not item:
+            products = (
+                datalayer.get("products_listed")
+                or datalayer.get("products")
+                or datalayer.get("items")
+                or []
+            )
+            if isinstance(products, dict):
+                products = list(products.values())
+
+            # Also try singular keys
+            if not products:
+                single = datalayer.get("product_detail") or datalayer.get("product")
+                if single:
+                    products = [single]
+
+            if products:
+                raw_item = products[0] if isinstance(products, list) else products
+                # Unwrap {"product": {...}} wrapper
+                item = raw_item.get("product", raw_item) if isinstance(raw_item, dict) else raw_item
+
+        if item and isinstance(item, dict):
+            logger.debug("datalayer item keys: %s", list(item.keys()))
             prices = item.get("prices", {})
             details["prices"] = {
                 "regular": _extract_price(prices.get("price") or item.get("price")),
@@ -73,12 +86,14 @@ async def extract_product_details(page: Page) -> dict:
                 "special": _extract_price(prices.get("special") or item.get("special")),
                 "without_tax": _extract_price(item.get("price_without_tax")),
             }
+            # availability can be full URL like "https://schema.org/OutOfStock"
+            availability = str(item.get("availability", ""))
             details["stock"] = {
                 "quantity": int(item.get("stock", item.get("quantity", 0)) or 0),
-                "in_stock": str(item.get("availability", "")) != "OutOfStock",
+                "in_stock": "OutOfStock" not in availability,
             }
         else:
-            logger.debug("datalayer found but no products in it")
+            logger.debug("datalayer found but no product data in it")
     else:
         logger.debug("No datalayerDataGMT on page")
 
