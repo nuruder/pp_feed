@@ -482,73 +482,79 @@ async def run():
     if url:
         # Single product test
         await init_db()
+        ua = (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+        )
+
         async with async_playwright() as pw:
             browser = await pw.chromium.launch(headless=True)
-            context = await browser.new_context(
-                user_agent=(
-                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
-                )
-            )
+
+            # --- Guest price ---
+            guest_ctx = await browser.new_context(user_agent=ua)
+            guest_page = await guest_ctx.new_page()
+            guest_details = await scrape_product_detail(guest_page, url, False)
+            await guest_ctx.close()
+
+            # --- Auth price (if --auth) ---
+            auth_details = None
             if auth:
                 cookies = load_cookies()
                 if cookies:
-                    await context.add_cookies(cookies)
-            page = await context.new_page()
+                    auth_ctx = await browser.new_context(user_agent=ua)
+                    await auth_ctx.add_cookies(cookies)
+                    auth_page = await auth_ctx.new_page()
+                    auth_details = await scrape_product_detail(auth_page, url, True)
 
-            details = await scrape_product_detail(page, url, auth)
-
-            if debug:
-                # Dump raw page diagnostics
-                print("\n=== DEBUG: Page diagnostics ===")
-                try:
-                    diag = await page.evaluate("""
-                        () => {
-                            const result = {};
-                            // datalayerDataGMT
-                            if (typeof datalayerDataGMT !== 'undefined') {
-                                result.datalayer = datalayerDataGMT;
-                            }
-                            // JSON-LD
-                            const ld = [];
-                            document.querySelectorAll('script[type="application/ld+json"]').forEach(s => {
-                                try { ld.push(JSON.parse(s.textContent)); } catch(e) {}
-                            });
-                            if (ld.length) result.jsonld = ld;
-                            // Meta prices
-                            const metas = {};
-                            document.querySelectorAll('meta[property]').forEach(m => {
-                                const p = m.getAttribute('property');
-                                if (p && (p.includes('price') || p.includes('product'))) {
-                                    metas[p] = m.content;
+                    if debug:
+                        print("\n=== DEBUG: Auth page diagnostics ===")
+                        try:
+                            diag = await auth_page.evaluate("""
+                                () => {
+                                    const result = {};
+                                    if (typeof datalayerDataGMT !== 'undefined') {
+                                        result.datalayer = datalayerDataGMT;
+                                    }
+                                    const priceTexts = [];
+                                    document.querySelectorAll(
+                                        '.price, .product-price, .price-new, .price-old, ' +
+                                        '[data-price], .special-price, span.price'
+                                    ).forEach(el => {
+                                        const t = el.textContent.trim();
+                                        if (t) priceTexts.push({selector: el.className || el.tagName, text: t.substring(0, 100)});
+                                    });
+                                    if (priceTexts.length) result.visible_prices = priceTexts;
+                                    return result;
                                 }
-                            });
-                            if (Object.keys(metas).length) result.meta_prices = metas;
-                            // itemprop price
-                            const ip = document.querySelector('[itemprop="price"]');
-                            if (ip) result.itemprop_price = ip.content || ip.textContent;
-                            // Visible price elements
-                            const priceTexts = [];
-                            const priceEls = document.querySelectorAll(
-                                '.price, .product-price, .price-new, .price-old, ' +
-                                '[data-price], .special-price, .autocalc-product-price, ' +
-                                '.j3-product-price, span.price'
-                            );
-                            priceEls.forEach(el => {
-                                const t = el.textContent.trim();
-                                if (t) priceTexts.push({selector: el.className || el.tagName, text: t.substring(0, 100)});
-                            });
-                            if (priceTexts.length) result.visible_prices = priceTexts;
-                            return result;
-                        }
-                    """)
-                    print(json.dumps(diag, indent=2, ensure_ascii=False, default=str))
-                except Exception as e:
-                    print(f"Diagnostics error: {e}")
-                print("=== END DEBUG ===\n")
+                            """)
+                            print(json.dumps(diag, indent=2, ensure_ascii=False, default=str))
+                        except Exception as e:
+                            print(f"Diagnostics error: {e}")
+                        print("=== END DEBUG ===\n")
 
-            if details:
-                print(json.dumps(details, indent=2, ensure_ascii=False, default=str))
+                    await auth_ctx.close()
+                else:
+                    print("No cookies found. Run: python run.py auth login")
+
+            # --- Build combined output ---
+            if guest_details:
+                output = {
+                    "url": url,
+                    "prices": {
+                        "regular": guest_details["prices"].get("regular"),
+                        "original": guest_details["prices"].get("original"),
+                        "special": guest_details["prices"].get("special"),
+                        "without_tax": guest_details["prices"].get("without_tax"),
+                        "wholesale": (
+                            auth_details["prices"].get("regular")
+                            if auth_details else None
+                        ),
+                    },
+                    "stock": guest_details.get("stock"),
+                    "sizes": guest_details.get("sizes"),
+                    "description": guest_details.get("description"),
+                }
+                print(json.dumps(output, indent=2, ensure_ascii=False, default=str))
             else:
                 print("Failed to scrape product")
 
