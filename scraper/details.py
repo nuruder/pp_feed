@@ -305,21 +305,14 @@ async def scrape_all_details(authenticated: bool = False, limit: int = 0):
             logger.error("No cookies available. Run: python -m scraper.auth login")
             return
 
-    async with async_playwright() as pw:
-        browser = await pw.chromium.launch(headless=True)
-        context = await browser.new_context(
-            user_agent=(
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
-            )
-        )
-        if cookies:
-            await context.add_cookies(cookies)
+    total = len(products)
+    counter = {"done": 0}
 
-        page = await context.new_page()
-
-        for i, product in enumerate(products):
-            logger.info("[%d/%d] %s", i + 1, len(products), product.name)
+    async def _worker(page, chunk):
+        """Process a chunk of products sequentially on one browser tab."""
+        for product in chunk:
+            counter["done"] += 1
+            logger.info("[%d/%d] %s", counter["done"], total, product.name)
             details = await scrape_product_detail(page, product.url, authenticated)
             if details:
                 await save_product_details(product.external_id, details)
@@ -333,6 +326,28 @@ async def scrape_all_details(authenticated: bool = False, limit: int = 0):
                 )
             await asyncio.sleep(REQUEST_DELAY)
 
+    async with async_playwright() as pw:
+        browser = await pw.chromium.launch(headless=True)
+        context = await browser.new_context(
+            user_agent=(
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+            )
+        )
+        if cookies:
+            await context.add_cookies(cookies)
+
+        # Split products into chunks, one per concurrent page
+        n = min(CONCURRENT_PAGES, len(products))
+        chunks = [products[i::n] for i in range(n)]
+
+        # Create one tab per chunk and run workers in parallel
+        workers = []
+        for chunk in chunks:
+            page = await context.new_page()
+            workers.append(_worker(page, chunk))
+
+        await asyncio.gather(*workers)
         await browser.close()
 
     logger.info("Done scraping details")
