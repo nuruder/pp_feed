@@ -7,6 +7,7 @@ load_dotenv()
 BASE_DIR = Path(__file__).resolve().parent
 COOKIES_PATH = BASE_DIR / "data" / "cookies.json"
 LOGS_DIR = BASE_DIR / "data" / "logs"
+CATEGORIES_FILE = BASE_DIR / "categories.txt"
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",

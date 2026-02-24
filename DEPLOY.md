@@ -72,26 +72,32 @@ API_HOST=0.0.0.0
 API_PORT=8000
 ```
 
-### 5. Initialize DB and first scrape
+### 5. Configure categories
+
+Edit `categories.txt` in the project root — one category per line in format `Name, URL`:
+```
+Padel Rackets, https://www.tiendapadelpoint.com/en/padel-rackets-en
+Padel Shoes, https://www.tiendapadelpoint.com/en/padel-shoes
+# Lines starting with # are comments
+```
+
+### 6. First scrape
 
 ```bash
 source .venv/bin/activate
 cd /opt/pp_parser
 
-# Create tables and scrape categories
-python -m scraper.categories
-
-# Scrape product listings
-python -m scraper.products
-
-# Authenticate (auto via 2Captcha, or manual fallback)
-python run.py auth login
-
-# Full scrape (prices, sizes, descriptions)
-python run.py scrape full
+# Run full scrape (categories → products → guest prices → auth prices)
+python run.py scrape
 ```
 
-### 6. systemd services
+This single command does everything:
+1. Loads categories from `categories.txt` into DB
+2. Scrapes product listings from each category
+3. Scrapes detailed info (guest prices, stock, sizes, descriptions)
+4. Authenticates (2Captcha or manual) and scrapes wholesale prices
+
+### 7. systemd services
 
 #### Scraper scheduler
 
@@ -189,15 +195,12 @@ sudo certbot --nginx -d your-domain.com
 
 ### Scheduling (2x daily)
 
-The built-in scheduler (`python run.py scheduler`) runs:
-- Quick price/stock updates at 08:00 and 20:00
-- Full scrape on Sundays at 03:00
+The built-in scheduler (`python run.py scheduler`) runs the full scrape flow at 08:00 and 20:00 daily.
 
 Alternatively, use cron:
 ```cron
-0 8 * * *   cd /opt/pp_parser && .venv/bin/python run.py scrape quick >> data/logs/cron.log 2>&1
-0 20 * * *  cd /opt/pp_parser && .venv/bin/python run.py scrape quick >> data/logs/cron.log 2>&1
-0 3 * * 0   cd /opt/pp_parser && .venv/bin/python run.py scrape full >> data/logs/cron.log 2>&1
+0 8 * * *   cd /opt/pp_parser && .venv/bin/python run.py scrape >> data/logs/cron.log 2>&1
+0 20 * * *  cd /opt/pp_parser && .venv/bin/python run.py scrape >> data/logs/cron.log 2>&1
 ```
 
 ### 2Captcha Setup

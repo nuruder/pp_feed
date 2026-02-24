@@ -4,9 +4,9 @@
 Main entry point for the PadelPoint parser.
 
 Usage:
-    python run.py scrape full          # Full scrape (categories + products + details)
-    python run.py scrape quick         # Quick price/stock update
-    python run.py auth login           # Interactive login with CAPTCHA
+    python run.py scrape               # Full scrape (categories → products → details → auth prices)
+    python run.py auth login           # Login (auto via 2Captcha, fallback to interactive)
+    python run.py auth interactive     # Force interactive login
     python run.py auth check           # Check if session is valid
     python run.py api                  # Start the API server
     python run.py export [--output X]  # Export to Excel
@@ -36,14 +36,8 @@ def main():
     command = sys.argv[1]
 
     if command == "scrape":
-        mode = sys.argv[2] if len(sys.argv) > 2 else "full"
-        from scraper.runner import full_run, quick_run
-        if mode == "full":
-            asyncio.run(full_run())
-        elif mode == "quick":
-            asyncio.run(quick_run())
-        else:
-            print(f"Unknown scrape mode: {mode}. Use 'full' or 'quick'.")
+        from scraper.runner import run_scrape
+        asyncio.run(run_scrape())
 
     elif command == "auth":
         action = sys.argv[2] if len(sys.argv) > 2 else "login"

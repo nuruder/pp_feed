@@ -1,0 +1,10 @@
+# Категории для парсинга
+# Формат: Название, URL
+# Одна категория на строку. Пустые строки и строки с # игнорируются.
+
+Padel Rackets, https://www.tiendapadelpoint.com/en/padel-rackets-en
+Padel Shoes, https://www.tiendapadelpoint.com/en/padel-shoes
+Padel Bags, https://www.tiendapadelpoint.com/en/padel-bags-backpacks
+Padel Clothing, https://www.tiendapadelpoint.com/en/padel-clothing
+Padel Balls, https://www.tiendapadelpoint.com/en/padel-balls
+Padel Accessories, https://www.tiendapadelpoint.com/en/padel-accessories

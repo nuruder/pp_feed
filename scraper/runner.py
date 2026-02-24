@@ -1,13 +1,14 @@
 """
 Orchestrator for scraping runs.
 
-Two modes:
-  - full:  Categories → Product listings → Details (guest) → Details (auth)
-  - quick: Price + stock update only (guest + auth)
+Single flow:
+  1. Sync categories from categories.txt → DB
+  2. Scrape product listings from all categories
+  3. Scrape product details (guest — prices, stock, sizes, descriptions)
+  4. Authenticate → scrape product details (wholesale prices)
 
 Test independently:
-    python -m scraper.runner full
-    python -m scraper.runner quick
+    python -m scraper.runner
 """
 
 import asyncio
@@ -16,69 +17,55 @@ import sys
 from datetime import datetime
 
 from db.database import init_db
-from scraper.categories import run as run_categories
+from scraper.categories import sync_categories
 from scraper.products import scrape_all_categories
 from scraper.details import scrape_all_details
-from scraper.auth import check_session_valid, load_cookies
+from scraper.auth import ensure_authenticated, check_session_valid, load_cookies
 
 logger = logging.getLogger(__name__)
 
 
-async def full_run():
-    """Complete scrape: categories, products, details (guest + auth)."""
+async def run_scrape():
+    """Complete scrape: categories → products → guest details → auth details."""
     start = datetime.utcnow()
-    logger.info("=== FULL RUN started at %s ===", start)
+    logger.info("=== SCRAPE started at %s ===", start)
 
     await init_db()
 
-    # Step 1: Categories
-    logger.info("--- Step 1: Scraping categories ---")
-    await run_categories()
+    # Step 1: Sync categories from file
+    logger.info("--- Step 1: Syncing categories from file ---")
+    categories = await sync_categories()
+    if not categories:
+        logger.error("No categories to scrape. Check categories.txt")
+        return
+    logger.info("Synced %d categories", len(categories))
 
-    # Step 2: Product listings
+    # Step 2: Scrape product listings
     logger.info("--- Step 2: Scraping product listings ---")
     total = await scrape_all_categories()
     logger.info("Found %d products total", total)
 
-    # Step 3: Guest details (prices, sizes, descriptions)
+    # Step 3: Guest details (prices, sizes, descriptions, stock)
     logger.info("--- Step 3: Scraping product details (guest) ---")
     await scrape_all_details(authenticated=False)
 
     # Step 4: Authenticated details (wholesale prices)
-    logger.info("--- Step 4: Scraping product details (authenticated) ---")
+    logger.info("--- Step 4: Authenticating and scraping wholesale prices ---")
     cookies = load_cookies()
     if cookies and await check_session_valid(cookies):
+        logger.info("Using saved session")
+    else:
+        logger.info("Attempting login...")
+        cookies = await ensure_authenticated()
+
+    if cookies:
         await scrape_all_details(authenticated=True)
     else:
-        logger.warning("No valid session. Skipping authenticated scrape.")
-        logger.warning("Run: python -m scraper.auth login")
+        logger.warning("Authentication failed. Skipping wholesale prices.")
+        logger.warning("Run: python run.py auth login")
 
     elapsed = (datetime.utcnow() - start).total_seconds()
-    logger.info("=== FULL RUN completed in %.1f seconds ===", elapsed)
-
-
-async def quick_run():
-    """Quick update: prices and stock only (no new products/descriptions)."""
-    start = datetime.utcnow()
-    logger.info("=== QUICK RUN started at %s ===", start)
-
-    await init_db()
-
-    # Guest prices
-    logger.info("--- Updating prices (guest) ---")
-    await scrape_all_details(authenticated=False)
-
-    # Auth prices
-    logger.info("--- Updating prices (authenticated) ---")
-    cookies = load_cookies()
-    if cookies and await check_session_valid(cookies):
-        await scrape_all_details(authenticated=True)
-    else:
-        logger.warning("No valid session. Skipping authenticated scrape.")
-        logger.warning("Run: python -m scraper.auth login")
-
-    elapsed = (datetime.utcnow() - start).total_seconds()
-    logger.info("=== QUICK RUN completed in %.1f seconds ===", elapsed)
+    logger.info("=== SCRAPE completed in %.1f seconds ===", elapsed)
 
 
 async def run():
@@ -86,15 +73,7 @@ async def run():
         level=logging.INFO,
         format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
     )
-
-    mode = sys.argv[1] if len(sys.argv) > 1 else "full"
-
-    if mode == "full":
-        await full_run()
-    elif mode == "quick":
-        await quick_run()
-    else:
-        logger.error("Unknown mode: %s. Use 'full' or 'quick'.", mode)
+    await run_scrape()
 
 
 if __name__ == "__main__":
