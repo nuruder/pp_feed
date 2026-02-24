@@ -14,6 +14,7 @@ import re
 import httpx
 from bs4 import BeautifulSoup
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from config import BASE_URL, REQUEST_DELAY, CONCURRENT_PAGES
 from db.database import AsyncSessionLocal, init_db
@@ -262,7 +263,7 @@ async def save_products(products: list[dict], category_id: int):
             category = result.scalar_one_or_none()
 
             for p in products:
-                # Upsert brand
+                # Upsert brand (handle concurrent inserts via savepoint)
                 brand_id = None
                 if p.get("manufacturer"):
                     result = await session.execute(
@@ -270,12 +271,21 @@ async def save_products(products: list[dict], category_id: int):
                     )
                     brand = result.scalar_one_or_none()
                     if not brand:
-                        brand = Brand(name=p["manufacturer"])
-                        session.add(brand)
-                        await session.flush()
-                    brand_id = brand.id
+                        try:
+                            async with session.begin_nested():
+                                brand = Brand(name=p["manufacturer"])
+                                session.add(brand)
+                                await session.flush()
+                        except IntegrityError:
+                            # Another worker inserted it concurrently
+                            result = await session.execute(
+                                select(Brand).where(Brand.name == p["manufacturer"])
+                            )
+                            brand = result.scalar_one_or_none()
+                    if brand:
+                        brand_id = brand.id
 
-                # Upsert product
+                # Upsert product (handle concurrent inserts via savepoint)
                 result = await session.execute(
                     select(Product).where(Product.external_id == p["external_id"])
                 )
@@ -292,19 +302,35 @@ async def save_products(products: list[dict], category_id: int):
                     if category and category not in product.categories:
                         product.categories.append(category)
                 else:
-                    product = Product(
-                        external_id=p["external_id"],
-                        name=p["name"],
-                        url=p["url"],
-                        image_url=p.get("image_url"),
-                        brand_id=brand_id,
-                        model=p.get("model"),
-                    )
-                    session.add(product)
-                    await session.flush()
-                    if category:
+                    try:
+                        async with session.begin_nested():
+                            product = Product(
+                                external_id=p["external_id"],
+                                name=p["name"],
+                                url=p["url"],
+                                image_url=p.get("image_url"),
+                                brand_id=brand_id,
+                                model=p.get("model"),
+                            )
+                            session.add(product)
+                            await session.flush()
+                    except IntegrityError:
+                        # Another worker inserted it concurrently
+                        result = await session.execute(
+                            select(Product).where(Product.external_id == p["external_id"])
+                        )
+                        product = result.scalar_one_or_none()
+                        if product:
+                            product.name = p["name"]
+                            product.url = p["url"]
+                            if p.get("image_url"):
+                                product.image_url = p["image_url"]
+                            product.brand_id = brand_id
+                            product.model = p.get("model")
+                    if product and category:
                         await session.refresh(product, ["categories"])
-                        product.categories.append(category)
+                        if category not in product.categories:
+                            product.categories.append(category)
 
 
 async def scrape_all_categories():
