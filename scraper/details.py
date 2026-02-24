@@ -45,6 +45,7 @@ async def extract_product_details(page: Page) -> dict:
         datalayer = None
 
     if datalayer:
+        logger.debug("datalayer keys: %s", list(datalayer.keys()) if isinstance(datalayer, dict) else type(datalayer))
         products = (
             datalayer.get("products_listed")
             or datalayer.get("products")
@@ -53,10 +54,18 @@ async def extract_product_details(page: Page) -> dict:
         )
         if isinstance(products, dict):
             products = list(products.values())
+
+        # Also try product_detail / product (singular) keys
+        if not products:
+            single = datalayer.get("product_detail") or datalayer.get("product")
+            if single:
+                products = [single]
+
         if products:
             raw_item = products[0] if isinstance(products, list) else products
             # Unwrap {"product": {...}} wrapper
             item = raw_item.get("product", raw_item) if isinstance(raw_item, dict) else raw_item
+            logger.debug("datalayer item keys: %s", list(item.keys()) if isinstance(item, dict) else type(item))
             prices = item.get("prices", {})
             details["prices"] = {
                 "regular": _extract_price(prices.get("price") or item.get("price")),
@@ -68,6 +77,10 @@ async def extract_product_details(page: Page) -> dict:
                 "quantity": int(item.get("stock", item.get("quantity", 0)) or 0),
                 "in_stock": str(item.get("availability", "")) != "OutOfStock",
             }
+        else:
+            logger.debug("datalayer found but no products in it")
+    else:
+        logger.debug("No datalayerDataGMT on page")
 
     # --- Description ---
     description_selectors = [
@@ -86,11 +99,44 @@ async def extract_product_details(page: Page) -> dict:
         except Exception:
             continue
 
-    # --- Prices from DOM (more accurate for visual prices) ---
+    # --- Prices from DOM (fallback / more accurate for visual prices) ---
     price_selectors = {
-        "regular": [".product-price", ".price-new", "#product-price", ".special-price"],
-        "original": [".price-old", ".price-original", "del", ".old-price", "s"],
+        "regular": [
+            ".product-price", ".price-new", "#product-price", ".special-price",
+            ".autocalc-product-price", ".price .price-new", "[data-price]",
+            "span.price", ".product-info .price", "#content .price",
+            ".j3-product-price .price-new", ".j3-product-price span",
+        ],
+        "original": [
+            ".price-old", ".price-original", "del", ".old-price", "s",
+            ".price .price-old", ".j3-product-price .price-old",
+        ],
     }
+
+    # If no prices from datalayer, also try a broad approach
+    if not details["prices"].get("regular"):
+        # Try to extract all prices from the price container
+        try:
+            price_container = await page.evaluate("""
+                () => {
+                    const selectors = [
+                        '.price', '#product .price', '.product-info .price',
+                        '.j3-product-price', '.product-price-group',
+                    ];
+                    for (const sel of selectors) {
+                        const el = document.querySelector(sel);
+                        if (el && el.textContent.trim()) {
+                            return el.innerHTML;
+                        }
+                    }
+                    return null;
+                }
+            """)
+            if price_container:
+                logger.debug("Price container HTML: %s", price_container[:300])
+        except Exception:
+            pass
+
     for price_type, selectors in price_selectors.items():
         if details["prices"].get(price_type) is not None:
             continue
@@ -102,9 +148,47 @@ async def extract_product_details(page: Page) -> dict:
                     parsed = _parse_price_text(text)
                     if parsed:
                         details["prices"][price_type] = parsed
+                        logger.debug("Price %s from DOM (%s): %s", price_type, sel, parsed)
                         break
             except Exception:
                 continue
+
+    # --- Structured data / meta fallback for prices ---
+    if not details["prices"].get("regular"):
+        try:
+            meta_price = await page.evaluate("""
+                () => {
+                    // JSON-LD
+                    const scripts = document.querySelectorAll('script[type="application/ld+json"]');
+                    for (const s of scripts) {
+                        try {
+                            const data = JSON.parse(s.textContent);
+                            const offers = data.offers || (data['@graph'] || []).find(x => x.offers)?.offers;
+                            if (offers) {
+                                const price = offers.price || (offers[0] && offers[0].price);
+                                if (price) return {price: String(price), currency: offers.priceCurrency || ''};
+                            }
+                        } catch(e) {}
+                    }
+                    // og:price / product:price
+                    const meta = document.querySelector('meta[property="product:price:amount"], meta[property="og:price:amount"]');
+                    if (meta) return {price: meta.content, currency: ''};
+                    // itemprop price
+                    const itemprop = document.querySelector('[itemprop="price"]');
+                    if (itemprop) {
+                        const v = itemprop.content || itemprop.textContent;
+                        if (v) return {price: v.trim(), currency: ''};
+                    }
+                    return null;
+                }
+            """)
+            if meta_price:
+                parsed = _parse_price_text(meta_price["price"])
+                if parsed:
+                    details["prices"]["regular"] = parsed
+                    logger.debug("Price from structured data: %s", parsed)
+        except Exception:
+            pass
 
     # --- Sizes/Options ---
     # Try select dropdowns
@@ -205,9 +289,14 @@ async def scrape_product_detail(
     """Navigate to product page and extract details."""
     try:
         await page.goto(product_url, timeout=PAGE_TIMEOUT)
-        await page.wait_for_load_state("networkidle", timeout=PAGE_TIMEOUT)
-        # Give dynamic content extra time
-        await asyncio.sleep(1)
+        # Wait for DOM content first, then try networkidle with shorter timeout
+        await page.wait_for_load_state("domcontentloaded", timeout=PAGE_TIMEOUT)
+        try:
+            await page.wait_for_load_state("networkidle", timeout=10000)
+        except Exception:
+            pass  # networkidle can timeout on pages with persistent connections
+        # Give dynamic content extra time to render
+        await asyncio.sleep(2)
     except Exception as e:
         logger.error("Failed to load %s: %s", product_url, e)
         return None
@@ -354,7 +443,11 @@ async def scrape_all_details(authenticated: bool = False, limit: int = 0):
 
 
 async def run():
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    debug = "--debug" in sys.argv
+    logging.basicConfig(
+        level=logging.DEBUG if debug else logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s",
+    )
 
     auth = "--auth" in sys.argv
     url = None
@@ -367,7 +460,12 @@ async def run():
         await init_db()
         async with async_playwright() as pw:
             browser = await pw.chromium.launch(headless=True)
-            context = await browser.new_context()
+            context = await browser.new_context(
+                user_agent=(
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+                )
+            )
             if auth:
                 cookies = load_cookies()
                 if cookies:
@@ -375,6 +473,56 @@ async def run():
             page = await context.new_page()
 
             details = await scrape_product_detail(page, url, auth)
+
+            if debug:
+                # Dump raw page diagnostics
+                print("\n=== DEBUG: Page diagnostics ===")
+                try:
+                    diag = await page.evaluate("""
+                        () => {
+                            const result = {};
+                            // datalayerDataGMT
+                            if (typeof datalayerDataGMT !== 'undefined') {
+                                result.datalayer = datalayerDataGMT;
+                            }
+                            // JSON-LD
+                            const ld = [];
+                            document.querySelectorAll('script[type="application/ld+json"]').forEach(s => {
+                                try { ld.push(JSON.parse(s.textContent)); } catch(e) {}
+                            });
+                            if (ld.length) result.jsonld = ld;
+                            // Meta prices
+                            const metas = {};
+                            document.querySelectorAll('meta[property]').forEach(m => {
+                                const p = m.getAttribute('property');
+                                if (p && (p.includes('price') || p.includes('product'))) {
+                                    metas[p] = m.content;
+                                }
+                            });
+                            if (Object.keys(metas).length) result.meta_prices = metas;
+                            // itemprop price
+                            const ip = document.querySelector('[itemprop="price"]');
+                            if (ip) result.itemprop_price = ip.content || ip.textContent;
+                            // Visible price elements
+                            const priceTexts = [];
+                            const priceEls = document.querySelectorAll(
+                                '.price, .product-price, .price-new, .price-old, ' +
+                                '[data-price], .special-price, .autocalc-product-price, ' +
+                                '.j3-product-price, span.price'
+                            );
+                            priceEls.forEach(el => {
+                                const t = el.textContent.trim();
+                                if (t) priceTexts.push({selector: el.className || el.tagName, text: t.substring(0, 100)});
+                            });
+                            if (priceTexts.length) result.visible_prices = priceTexts;
+                            return result;
+                        }
+                    """)
+                    print(json.dumps(diag, indent=2, ensure_ascii=False, default=str))
+                except Exception as e:
+                    print(f"Diagnostics error: {e}")
+                print("=== END DEBUG ===\n")
+
             if details:
                 print(json.dumps(details, indent=2, ensure_ascii=False, default=str))
             else:
