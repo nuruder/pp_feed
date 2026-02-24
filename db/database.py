@@ -1,14 +1,25 @@
+import ssl as _ssl
+
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy import make_url
 from db.models import Base
 from config import DATABASE_URL
 
-# asyncpg doesn't understand 'sslmode' — strip it from query params
+# asyncpg doesn't understand 'sslmode' — translate to asyncpg's 'ssl' param
 _url = make_url(DATABASE_URL)
-if _url.query.get("sslmode"):
-    _url = _url.difference_update_query(["sslmode"])
+_connect_args = {}
 
-engine = create_async_engine(_url, echo=False)
+_sslmode = _url.query.get("sslmode")
+if _sslmode:
+    _url = _url.difference_update_query(["sslmode"])
+    if _sslmode in ("require", "prefer", "verify-ca", "verify-full"):
+        # Create a permissive SSL context (like sslmode=require)
+        _ctx = _ssl.create_default_context()
+        _ctx.check_hostname = False
+        _ctx.verify_mode = _ssl.CERT_NONE
+        _connect_args["ssl"] = _ctx
+
+engine = create_async_engine(_url, echo=False, connect_args=_connect_args)
 AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
