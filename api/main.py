@@ -16,11 +16,12 @@ from sqlalchemy import select, func, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.database import init_db, get_db
-from db.models import Product, Category, Brand, PriceSnapshot
+from db.models import Product, Category, Brand, ProductType, PriceSnapshot
 from api.schemas import StatsSchema
 from api.routes.categories import router as categories_router
 from api.routes.products import router as products_router
 from api.routes.brands import router as brands_router
+from api.routes.product_types import router as product_types_router
 from api.routes.prices import router as prices_router
 
 
@@ -40,6 +41,7 @@ app = FastAPI(
 app.include_router(categories_router, prefix="/api/v1")
 app.include_router(products_router, prefix="/api/v1")
 app.include_router(brands_router, prefix="/api/v1")
+app.include_router(product_types_router, prefix="/api/v1")
 app.include_router(prices_router, prefix="/api/v1")
 
 
@@ -49,6 +51,7 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
     total_products = await db.scalar(select(func.count(Product.id))) or 0
     total_categories = await db.scalar(select(func.count(Category.id))) or 0
     total_brands = await db.scalar(select(func.count(Brand.id))) or 0
+    total_product_types = await db.scalar(select(func.count(ProductType.id))) or 0
 
     # Count in-stock products (based on latest snapshot)
     # Subquery for latest snapshot per product
@@ -78,6 +81,7 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
         total_products=total_products,
         total_categories=total_categories,
         total_brands=total_brands,
+        total_product_types=total_product_types,
         in_stock_products=in_stock_count,
         last_scrape=last_scrape,
     )

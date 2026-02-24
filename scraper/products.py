@@ -18,7 +18,7 @@ from sqlalchemy.exc import IntegrityError
 
 from config import BASE_URL, REQUEST_DELAY, CONCURRENT_PAGES
 from db.database import AsyncSessionLocal, init_db
-from db.models import Category, Brand, Product
+from db.models import Category, Brand, Product, ProductType
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +95,7 @@ def extract_datalayer_products(html: str) -> list[dict]:
             "url": item.get("url", ""),
             "image_url": image_url,
             "manufacturer": item.get("manufacturer", item.get("brand", "")),
+            "category": item.get("category", ""),
             "model": str(item.get("model", "")),
             "price": _parse_price(item.get("price")),
             "base_price": _parse_price(item.get("base_price")),
@@ -264,6 +265,7 @@ async def save_products(products: list[dict], category_id: int):
 
             for p in products:
                 # Upsert brand (handle concurrent inserts via savepoint)
+                # Upsert brand
                 brand_id = None
                 if p.get("manufacturer"):
                     result = await session.execute(
@@ -277,7 +279,6 @@ async def save_products(products: list[dict], category_id: int):
                                 session.add(brand)
                                 await session.flush()
                         except IntegrityError:
-                            # Another worker inserted it concurrently
                             result = await session.execute(
                                 select(Brand).where(Brand.name == p["manufacturer"])
                             )
@@ -285,7 +286,28 @@ async def save_products(products: list[dict], category_id: int):
                     if brand:
                         brand_id = brand.id
 
-                # Upsert product (handle concurrent inserts via savepoint)
+                # Upsert product type
+                product_type_id = None
+                if p.get("category"):
+                    result = await session.execute(
+                        select(ProductType).where(ProductType.name == p["category"])
+                    )
+                    pt = result.scalar_one_or_none()
+                    if not pt:
+                        try:
+                            async with session.begin_nested():
+                                pt = ProductType(name=p["category"])
+                                session.add(pt)
+                                await session.flush()
+                        except IntegrityError:
+                            result = await session.execute(
+                                select(ProductType).where(ProductType.name == p["category"])
+                            )
+                            pt = result.scalar_one_or_none()
+                    if pt:
+                        product_type_id = pt.id
+
+                # Upsert product
                 result = await session.execute(
                     select(Product).where(Product.external_id == p["external_id"])
                 )
@@ -296,8 +318,8 @@ async def save_products(products: list[dict], category_id: int):
                     if p.get("image_url"):
                         product.image_url = p["image_url"]
                     product.brand_id = brand_id
+                    product.product_type_id = product_type_id
                     product.model = p.get("model")
-                    # Load existing categories and append if not already linked
                     await session.refresh(product, ["categories"])
                     if category and category not in product.categories:
                         product.categories.append(category)
@@ -310,12 +332,12 @@ async def save_products(products: list[dict], category_id: int):
                                 url=p["url"],
                                 image_url=p.get("image_url"),
                                 brand_id=brand_id,
+                                product_type_id=product_type_id,
                                 model=p.get("model"),
                             )
                             session.add(product)
                             await session.flush()
                     except IntegrityError:
-                        # Another worker inserted it concurrently
                         result = await session.execute(
                             select(Product).where(Product.external_id == p["external_id"])
                         )
@@ -326,6 +348,7 @@ async def save_products(products: list[dict], category_id: int):
                             if p.get("image_url"):
                                 product.image_url = p["image_url"]
                             product.brand_id = brand_id
+                            product.product_type_id = product_type_id
                             product.model = p.get("model")
                     if product and category:
                         await session.refresh(product, ["categories"])

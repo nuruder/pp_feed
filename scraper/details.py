@@ -18,7 +18,8 @@ from sqlalchemy import select
 
 from config import BASE_URL, REQUEST_DELAY, PAGE_TIMEOUT, CONCURRENT_PAGES
 from db.database import AsyncSessionLocal, init_db
-from db.models import Product, ProductSize, PriceSnapshot
+from db.models import Product, ProductType, ProductSize, PriceSnapshot
+from sqlalchemy.exc import IntegrityError
 from scraper.auth import load_cookies
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,7 @@ async def extract_product_details(page: Page) -> dict:
     """Extract all product details from a rendered product page."""
     details = {
         "description": None,
+        "category": None,
         "sizes": [],
         "prices": {},
         "stock": {},
@@ -79,6 +81,9 @@ async def extract_product_details(page: Page) -> dict:
 
         if item and isinstance(item, dict):
             logger.debug("datalayer item keys: %s", list(item.keys()))
+            # Category / product type
+            if item.get("category"):
+                details["category"] = item["category"]
             prices = item.get("prices", {})
             details["prices"] = {
                 "regular": _extract_price(prices.get("price") or item.get("price")),
@@ -337,6 +342,26 @@ async def save_product_details(external_id: str, details: dict):
             # Update description if we got one
             if details.get("description"):
                 product.description = details["description"]
+
+            # Update product type from datalayer category
+            if details.get("category"):
+                result = await session.execute(
+                    select(ProductType).where(ProductType.name == details["category"])
+                )
+                pt = result.scalar_one_or_none()
+                if not pt:
+                    try:
+                        async with session.begin_nested():
+                            pt = ProductType(name=details["category"])
+                            session.add(pt)
+                            await session.flush()
+                    except IntegrityError:
+                        result = await session.execute(
+                            select(ProductType).where(ProductType.name == details["category"])
+                        )
+                        pt = result.scalar_one_or_none()
+                if pt:
+                    product.product_type_id = pt.id
 
             # Update sizes
             if details.get("sizes"):

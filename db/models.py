@@ -34,6 +34,16 @@ class Category(Base):
     products = relationship("Product", secondary=product_categories, back_populates="categories")
 
 
+class ProductType(Base):
+    """Product type/category from the site's datalayer (e.g. 'Padel Rackets', 'Padel Shoes')."""
+    __tablename__ = "product_types"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(255), nullable=False, unique=True)
+
+    products = relationship("Product", back_populates="product_type")
+
+
 class Brand(Base):
     __tablename__ = "brands"
 
@@ -53,11 +63,13 @@ class Product(Base):
     image_url = Column(String(512), nullable=True)
     description = Column(Text, nullable=True)
     brand_id = Column(Integer, ForeignKey("brands.id"), nullable=True)
+    product_type_id = Column(Integer, ForeignKey("product_types.id"), nullable=True)
     model = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     brand = relationship("Brand", back_populates="products")
+    product_type = relationship("ProductType", back_populates="products")
     categories = relationship("Category", secondary=product_categories, back_populates="products")
     sizes = relationship("ProductSize", back_populates="product", cascade="all, delete-orphan")
     price_snapshots = relationship("PriceSnapshot", back_populates="product", cascade="all, delete-orphan")

@@ -41,7 +41,7 @@ async def export_to_excel(output_path: str | Path | None = None) -> Path:
     ws.title = "Products"
 
     headers = [
-        "ID", "External ID", "Name", "Brand", "Category",
+        "ID", "External ID", "Name", "Brand", "Product Type", "Category",
         "Price (Regular)", "Price (Original)", "Price (Special)", "Price (Wholesale)",
         "Price (No Tax)", "Stock Qty", "In Stock", "Sizes",
         "URL", "Last Updated",
@@ -58,6 +58,7 @@ async def export_to_excel(output_path: str | Path | None = None) -> Path:
             select(Product)
             .options(
                 selectinload(Product.brand),
+                selectinload(Product.product_type),
                 selectinload(Product.categories),
                 selectinload(Product.sizes),
             )
@@ -85,17 +86,18 @@ async def export_to_excel(output_path: str | Path | None = None) -> Path:
             ws.cell(row=row, column=2, value=product.external_id)
             ws.cell(row=row, column=3, value=product.name)
             ws.cell(row=row, column=4, value=product.brand.name if product.brand else "")
-            ws.cell(row=row, column=5, value=", ".join(c.name for c in product.categories) if product.categories else "")
-            ws.cell(row=row, column=6, value=latest.price_regular if latest else None)
-            ws.cell(row=row, column=7, value=latest.price_original if latest else None)
-            ws.cell(row=row, column=8, value=latest.price_special if latest else None)
-            ws.cell(row=row, column=9, value=latest.price_wholesale if latest else None)
-            ws.cell(row=row, column=10, value=latest.price_without_tax if latest else None)
-            ws.cell(row=row, column=11, value=latest.stock_quantity if latest else 0)
-            ws.cell(row=row, column=12, value="Yes" if (latest and latest.in_stock) else "No")
-            ws.cell(row=row, column=13, value=sizes_str)
-            ws.cell(row=row, column=14, value=product.url)
-            ws.cell(row=row, column=15, value=latest.timestamp.isoformat() if latest else "")
+            ws.cell(row=row, column=5, value=product.product_type.name if product.product_type else "")
+            ws.cell(row=row, column=6, value=", ".join(c.name for c in product.categories) if product.categories else "")
+            ws.cell(row=row, column=7, value=latest.price_regular if latest else None)
+            ws.cell(row=row, column=8, value=latest.price_original if latest else None)
+            ws.cell(row=row, column=9, value=latest.price_special if latest else None)
+            ws.cell(row=row, column=10, value=latest.price_wholesale if latest else None)
+            ws.cell(row=row, column=11, value=latest.price_without_tax if latest else None)
+            ws.cell(row=row, column=12, value=latest.stock_quantity if latest else 0)
+            ws.cell(row=row, column=13, value="Yes" if (latest and latest.in_stock) else "No")
+            ws.cell(row=row, column=14, value=sizes_str)
+            ws.cell(row=row, column=15, value=product.url)
+            ws.cell(row=row, column=16, value=latest.timestamp.isoformat() if latest else "")
             row += 1
 
     # Auto-width columns

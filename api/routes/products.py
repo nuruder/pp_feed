@@ -4,10 +4,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from db.database import get_db
-from db.models import Product, Brand, Category, PriceSnapshot, ProductSize, product_categories
+from db.models import Product, Brand, ProductType, Category, PriceSnapshot, ProductSize, product_categories
 from api.schemas import (
     ProductShort, ProductDetail, PaginatedProducts,
-    PriceSnapshotSchema, SizeSchema, BrandSchema, CategoryShort,
+    PriceSnapshotSchema, SizeSchema, BrandSchema, ProductTypeSchema, CategoryShort,
 )
 
 router = APIRouter(prefix="/products", tags=["Products"])
@@ -21,6 +21,7 @@ def _build_product_short(product: Product, latest: PriceSnapshot | None) -> Prod
         url=product.url,
         image_url=product.image_url,
         brand=product.brand.name if product.brand else None,
+        product_type=product.product_type.name if product.product_type else None,
         categories=[c.name for c in product.categories],
         in_stock=latest.in_stock if latest else False,
         price_regular=latest.price_regular if latest else None,
@@ -44,6 +45,7 @@ async def list_products(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     category_id: int | None = None,
+    product_type_id: int | None = None,
     brand_id: int | None = None,
     brand_name: str | None = None,
     in_stock: bool | None = None,
@@ -63,13 +65,19 @@ async def list_products(
     """
     query = (
         select(Product)
-        .options(selectinload(Product.brand), selectinload(Product.categories))
+        .options(
+            selectinload(Product.brand),
+            selectinload(Product.product_type),
+            selectinload(Product.categories),
+        )
     )
 
     if category_id is not None:
         query = query.join(product_categories).where(
             product_categories.c.category_id == category_id
         )
+    if product_type_id is not None:
+        query = query.where(Product.product_type_id == product_type_id)
     if brand_id is not None:
         query = query.where(Product.brand_id == brand_id)
     if brand_name:
@@ -130,6 +138,7 @@ async def get_product(product_id: int, db: AsyncSession = Depends(get_db)):
         .where(Product.id == product_id)
         .options(
             selectinload(Product.brand),
+            selectinload(Product.product_type),
             selectinload(Product.categories),
             selectinload(Product.sizes),
             selectinload(Product.price_snapshots),
@@ -153,6 +162,17 @@ async def get_product(product_id: int, db: AsyncSession = Depends(get_db)):
             products_count=brand_products_count or 0,
         )
 
+    pt_schema = None
+    if product.product_type:
+        pt_products_count = await db.scalar(
+            select(func.count(Product.id)).where(Product.product_type_id == product.product_type.id)
+        )
+        pt_schema = ProductTypeSchema(
+            id=product.product_type.id,
+            name=product.product_type.name,
+            products_count=pt_products_count or 0,
+        )
+
     cat_schemas = []
     for cat in product.categories:
         cat_schemas.append(CategoryShort(
@@ -172,6 +192,7 @@ async def get_product(product_id: int, db: AsyncSession = Depends(get_db)):
         description=product.description,
         model=product.model,
         brand=brand_schema,
+        product_type=pt_schema,
         categories=cat_schemas,
         sizes=[
             SizeSchema(
@@ -196,6 +217,7 @@ async def get_product_by_external_id(external_id: str, db: AsyncSession = Depend
         .where(Product.external_id == external_id)
         .options(
             selectinload(Product.brand),
+            selectinload(Product.product_type),
             selectinload(Product.categories),
             selectinload(Product.sizes),
             selectinload(Product.price_snapshots),

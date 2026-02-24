@@ -27,6 +27,16 @@ class CategoryTree(BaseModel):
     model_config = {"from_attributes": True}
 
 
+# --- Product Types ---
+
+class ProductTypeSchema(BaseModel):
+    id: int
+    name: str
+    products_count: int = 0
+
+    model_config = {"from_attributes": True}
+
+
 # --- Brands ---
 
 class BrandSchema(BaseModel):
@@ -71,6 +81,7 @@ class ProductShort(BaseModel):
     url: str
     image_url: str | None = None
     brand: str | None = None
+    product_type: str | None = None
     categories: list[str] = []
     in_stock: bool = False
     price_regular: float | None = None
@@ -89,6 +100,7 @@ class ProductDetail(BaseModel):
     description: str | None = None
     model: str | None = None
     brand: BrandSchema | None = None
+    product_type: ProductTypeSchema | None = None
     categories: list[CategoryShort] = []
     sizes: list[SizeSchema] = []
     latest_price: PriceSnapshotSchema | None = None
@@ -115,5 +127,6 @@ class StatsSchema(BaseModel):
     total_products: int
     total_categories: int
     total_brands: int
+    total_product_types: int = 0
     in_stock_products: int
     last_scrape: datetime | None = None
