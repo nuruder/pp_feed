@@ -219,63 +219,90 @@ async def extract_product_details(page: Page) -> dict:
             pass
 
     # --- Sizes/Options ---
-    # Try select dropdowns
-    option_selectors = [
-        "select[id^='input-option']",
-        "select.form-control[name^='option']",
-        "#product select",
-    ]
-    for sel in option_selectors:
-        try:
-            select_el = page.locator(sel).first
-            if await select_el.is_visible(timeout=2000):
-                options = await select_el.evaluate("""
-                    (el) => Array.from(el.options)
-                        .filter(o => o.value)
-                        .map(o => ({
-                            value: o.value,
-                            label: o.textContent.trim(),
-                            disabled: o.disabled
-                        }))
-                """)
-                for opt in options:
-                    label = opt["label"]
-                    # Check if out of stock marker in label
-                    oos = "---" in label or "out of stock" in label.lower() or "agotad" in label.lower()
-                    # Clean label
-                    clean_label = re.sub(r'\s*[-–]\s*(out of stock|agotad[oa]|no disponible).*', '', label, flags=re.IGNORECASE).strip()
+    # Extract all options from the page via JS (handles dynamically rendered elements)
+    try:
+        raw_options = await page.evaluate("""
+            () => {
+                const results = [];
+
+                // 1. All select dropdowns with options
+                document.querySelectorAll('select').forEach(sel => {
+                    const id = sel.id || '';
+                    const name = sel.name || '';
+                    // Only product option selects (not quantity, currency, etc.)
+                    if (id.includes('option') || name.includes('option') ||
+                        sel.closest('.product-options, .form-group, #product, .product-info')) {
+                        Array.from(sel.options).forEach(o => {
+                            if (o.value && o.value !== '') {
+                                results.push({
+                                    type: 'select',
+                                    selector_id: id,
+                                    value: o.value,
+                                    label: o.textContent.trim(),
+                                    disabled: o.disabled,
+                                });
+                            }
+                        });
+                    }
+                });
+
+                // 2. Radio buttons for options
+                document.querySelectorAll('input[type="radio"]').forEach(radio => {
+                    const name = radio.name || '';
+                    if (name.includes('option')) {
+                        const label = radio.closest('label') ||
+                                      document.querySelector(`label[for="${radio.id}"]`);
+                        results.push({
+                            type: 'radio',
+                            selector_id: name,
+                            value: radio.value,
+                            label: label ? label.textContent.trim() : radio.value,
+                            disabled: radio.disabled,
+                        });
+                    }
+                });
+
+                // 3. Button groups for sizes (some themes use buttons instead of selects)
+                document.querySelectorAll('.option-value button, .product-options button, .size-btn').forEach(btn => {
+                    const text = btn.textContent.trim();
+                    if (text && text.length < 20) {
+                        results.push({
+                            type: 'button',
+                            selector_id: 'button-group',
+                            value: text,
+                            label: text,
+                            disabled: btn.disabled || btn.classList.contains('disabled'),
+                        });
+                    }
+                });
+
+                return results;
+            }
+        """)
+
+        if raw_options:
+            logger.debug("Found %d raw options on page", len(raw_options))
+            for opt in raw_options:
+                label = opt["label"]
+                # Check if out of stock marker in label
+                oos = ("---" in label or
+                       "out of stock" in label.lower() or
+                       "agotad" in label.lower() or
+                       "esgotad" in label.lower() or
+                       "no disponible" in label.lower())
+                # Clean label
+                clean_label = re.sub(
+                    r'\s*[-–]\s*(out of stock|agotad[oa]|esgotad[oa]|no disponible).*',
+                    '', label, flags=re.IGNORECASE
+                ).strip()
+                # Skip placeholder options like "--- Please Select ---"
+                if clean_label and clean_label != "---" and not clean_label.startswith("---"):
                     details["sizes"].append({
                         "label": clean_label,
                         "in_stock": not oos and not opt.get("disabled", False),
                     })
-                if details["sizes"]:
-                    break
-        except Exception:
-            continue
-
-    # Try radio buttons / button groups for sizes
-    if not details["sizes"]:
-        radio_selectors = [
-            ".product-options .radio label",
-            ".option-value label",
-            "input[type='radio'][name^='option'] + label",
-        ]
-        for sel in radio_selectors:
-            try:
-                labels = page.locator(sel)
-                count = await labels.count()
-                for i in range(count):
-                    text = await labels.nth(i).inner_text()
-                    text = text.strip()
-                    if text:
-                        details["sizes"].append({
-                            "label": text,
-                            "in_stock": True,  # Assume in stock unless marked
-                        })
-                if details["sizes"]:
-                    break
-            except Exception:
-                continue
+    except Exception as e:
+        logger.debug("Options extraction error: %s", e)
 
     return details
 
@@ -530,6 +557,58 @@ async def run():
             guest_ctx = await browser.new_context(user_agent=ua)
             guest_page = await guest_ctx.new_page()
             guest_details = await scrape_product_detail(guest_page, url, False)
+
+            if debug:
+                # Dump options/selects diagnostics
+                print("\n=== DEBUG: Page options diagnostics ===")
+                try:
+                    options_diag = await guest_page.evaluate("""
+                        () => {
+                            const result = {};
+                            // All selects
+                            const selects = [];
+                            document.querySelectorAll('select').forEach(sel => {
+                                const opts = Array.from(sel.options).map(o => ({
+                                    value: o.value, text: o.textContent.trim(),
+                                    disabled: o.disabled
+                                }));
+                                selects.push({
+                                    id: sel.id, name: sel.name,
+                                    class: sel.className,
+                                    parent: sel.parentElement ? sel.parentElement.className : '',
+                                    options: opts
+                                });
+                            });
+                            if (selects.length) result.selects = selects;
+                            // All radio buttons
+                            const radios = [];
+                            document.querySelectorAll('input[type="radio"]').forEach(r => {
+                                const label = r.closest('label') ||
+                                              document.querySelector(`label[for="${r.id}"]`);
+                                radios.push({
+                                    name: r.name, value: r.value, id: r.id,
+                                    label: label ? label.textContent.trim() : ''
+                                });
+                            });
+                            if (radios.length) result.radios = radios;
+                            // Elements with "option" in class/id
+                            const optionEls = [];
+                            document.querySelectorAll('[class*="option"], [id*="option"]').forEach(el => {
+                                optionEls.push({
+                                    tag: el.tagName, id: el.id,
+                                    class: el.className,
+                                    text: el.textContent.trim().substring(0, 200)
+                                });
+                            });
+                            if (optionEls.length) result.option_elements = optionEls;
+                            return result;
+                        }
+                    """)
+                    print(json.dumps(options_diag, indent=2, ensure_ascii=False, default=str))
+                except Exception as e:
+                    print(f"Options diagnostics error: {e}")
+                print("=== END DEBUG ===\n")
+
             await guest_ctx.close()
 
             # --- Auth price (if --auth) ---
