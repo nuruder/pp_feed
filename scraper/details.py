@@ -357,25 +357,36 @@ async def save_product_details(external_id: str, details: dict):
                             in_stock=sz["in_stock"],
                         ))
 
-            # Create price snapshot
+            # Price snapshot
             prices = details.get("prices", {})
             stock = details.get("stock", {})
 
             if details.get("is_authenticated"):
-                # Update wholesale price on latest snapshot or create new
-                snapshot = PriceSnapshot(
-                    product_id=product.id,
-                    timestamp=datetime.utcnow(),
-                    price_wholesale=prices.get("regular"),
-                    price_regular=prices.get("regular"),
-                    price_original=prices.get("original"),
-                    price_special=prices.get("special"),
-                    price_without_tax=prices.get("without_tax"),
-                    stock_quantity=stock.get("quantity", 0),
-                    in_stock=stock.get("in_stock", False),
+                # Update latest snapshot with wholesale price
+                result = await session.execute(
+                    select(PriceSnapshot)
+                    .where(PriceSnapshot.product_id == product.id)
+                    .order_by(PriceSnapshot.timestamp.desc())
+                    .limit(1)
                 )
+                snapshot = result.scalar_one_or_none()
+                if snapshot:
+                    snapshot.price_wholesale = prices.get("regular")
+                else:
+                    # No existing snapshot — create one with all data
+                    session.add(PriceSnapshot(
+                        product_id=product.id,
+                        timestamp=datetime.utcnow(),
+                        price_wholesale=prices.get("regular"),
+                        price_regular=prices.get("regular"),
+                        price_original=prices.get("original"),
+                        price_special=prices.get("special"),
+                        price_without_tax=prices.get("without_tax"),
+                        stock_quantity=stock.get("quantity", 0),
+                        in_stock=stock.get("in_stock", False),
+                    ))
             else:
-                snapshot = PriceSnapshot(
+                session.add(PriceSnapshot(
                     product_id=product.id,
                     timestamp=datetime.utcnow(),
                     price_regular=prices.get("regular"),
@@ -384,9 +395,7 @@ async def save_product_details(external_id: str, details: dict):
                     price_without_tax=prices.get("without_tax"),
                     stock_quantity=stock.get("quantity", 0),
                     in_stock=stock.get("in_stock", False),
-                )
-
-            session.add(snapshot)
+                ))
 
 
 async def scrape_all_details(authenticated: bool = False, limit: int = 0):
