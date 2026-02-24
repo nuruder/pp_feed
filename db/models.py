@@ -65,6 +65,8 @@ class Product(Base):
     brand_id = Column(Integer, ForeignKey("brands.id"), nullable=True)
     product_type_id = Column(Integer, ForeignKey("product_types.id"), nullable=True)
     model = Column(String(255), nullable=True)
+    stock_quantity = Column(Integer, default=0)
+    in_stock = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

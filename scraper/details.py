@@ -85,11 +85,19 @@ async def extract_product_details(page: Page) -> dict:
             if item.get("category"):
                 details["category"] = item["category"]
             prices = item.get("prices", {})
+            # Extract without_tax from nested price object: prices.price.without_tax
+            without_tax = None
+            price_obj = prices.get("price")
+            if isinstance(price_obj, dict):
+                without_tax = _extract_price(price_obj.get("without_tax"))
+            if without_tax is None:
+                without_tax = _extract_price(item.get("price_without_tax"))
+
             details["prices"] = {
                 "regular": _extract_price(prices.get("price") or item.get("price")),
                 "original": _extract_price(prices.get("base_price") or item.get("base_price")),
                 "special": _extract_price(prices.get("special") or item.get("special")),
-                "without_tax": _extract_price(item.get("price_without_tax")),
+                "without_tax": without_tax,
             }
             # availability can be full URL like "https://schema.org/OutOfStock"
             availability = str(item.get("availability", ""))
@@ -382,10 +390,13 @@ async def save_product_details(external_id: str, details: dict):
                             in_stock=sz["in_stock"],
                         ))
 
-            # Price snapshot
+            # Update stock on product
             prices = details.get("prices", {})
             stock = details.get("stock", {})
+            product.stock_quantity = stock.get("quantity", 0)
+            product.in_stock = stock.get("in_stock", False)
 
+            # Price snapshot
             if details.get("is_authenticated"):
                 # Update latest snapshot with wholesale price
                 result = await session.execute(

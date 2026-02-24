@@ -23,10 +23,13 @@ def _build_product_short(product: Product, latest: PriceSnapshot | None) -> Prod
         brand=product.brand.name if product.brand else None,
         product_type=product.product_type.name if product.product_type else None,
         categories=[c.name for c in product.categories],
-        in_stock=latest.in_stock if latest else False,
+        stock_quantity=product.stock_quantity or 0,
+        in_stock=product.in_stock or False,
         price_regular=latest.price_regular if latest else None,
         price_original=latest.price_original if latest else None,
+        price_special=latest.price_special if latest else None,
         price_wholesale=latest.price_wholesale if latest else None,
+        price_without_tax=latest.price_without_tax if latest else None,
     )
 
 
@@ -193,6 +196,8 @@ async def get_product(product_id: int, db: AsyncSession = Depends(get_db)):
         model=product.model,
         brand=brand_schema,
         product_type=pt_schema,
+        stock_quantity=product.stock_quantity or 0,
+        in_stock=product.in_stock or False,
         categories=cat_schemas,
         sizes=[
             SizeSchema(

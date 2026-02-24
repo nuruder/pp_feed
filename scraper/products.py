@@ -320,6 +320,8 @@ async def save_products(products: list[dict], category_id: int):
                     product.brand_id = brand_id
                     product.product_type_id = product_type_id
                     product.model = p.get("model")
+                    product.stock_quantity = p.get("stock", 0)
+                    product.in_stock = p.get("in_stock", False)
                     await session.refresh(product, ["categories"])
                     if category and category not in product.categories:
                         product.categories.append(category)
@@ -334,6 +336,8 @@ async def save_products(products: list[dict], category_id: int):
                                 brand_id=brand_id,
                                 product_type_id=product_type_id,
                                 model=p.get("model"),
+                                stock_quantity=p.get("stock", 0),
+                                in_stock=p.get("in_stock", False),
                             )
                             session.add(product)
                             await session.flush()
@@ -350,6 +354,8 @@ async def save_products(products: list[dict], category_id: int):
                             product.brand_id = brand_id
                             product.product_type_id = product_type_id
                             product.model = p.get("model")
+                            product.stock_quantity = p.get("stock", 0)
+                            product.in_stock = p.get("in_stock", False)
                     if product and category:
                         await session.refresh(product, ["categories"])
                         if category not in product.categories:

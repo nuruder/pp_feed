@@ -83,10 +83,13 @@ class ProductShort(BaseModel):
     brand: str | None = None
     product_type: str | None = None
     categories: list[str] = []
+    stock_quantity: int = 0
     in_stock: bool = False
     price_regular: float | None = None
     price_original: float | None = None
+    price_special: float | None = None
     price_wholesale: float | None = None
+    price_without_tax: float | None = None
 
     model_config = {"from_attributes": True}
 
@@ -101,6 +104,8 @@ class ProductDetail(BaseModel):
     model: str | None = None
     brand: BrandSchema | None = None
     product_type: ProductTypeSchema | None = None
+    stock_quantity: int = 0
+    in_stock: bool = False
     categories: list[CategoryShort] = []
     sizes: list[SizeSchema] = []
     latest_price: PriceSnapshotSchema | None = None
