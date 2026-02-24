@@ -303,6 +303,7 @@ async def save_products(products: list[dict], category_id: int):
                     session.add(product)
                     await session.flush()
                     if category:
+                        await session.refresh(product, ["categories"])
                         product.categories.append(category)
 
 
