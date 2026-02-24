@@ -398,24 +398,29 @@ async def save_product_details(external_id: str, details: dict):
                 if pt:
                     product.product_type_id = pt.id
 
-            # Update sizes
-            if details.get("sizes"):
-                # Remove old sizes
-                result = await session.execute(
-                    select(ProductSize).where(ProductSize.product_id == product.id)
-                )
-                old_sizes = result.scalars().all()
-                existing = {s.size_label: s for s in old_sizes}
+            # Sync sizes: add new, update existing, delete removed
+            result = await session.execute(
+                select(ProductSize).where(ProductSize.product_id == product.id)
+            )
+            old_sizes = result.scalars().all()
+            existing = {s.size_label: s for s in old_sizes}
+            new_labels = {sz["label"] for sz in details.get("sizes", [])}
 
-                for sz in details["sizes"]:
-                    if sz["label"] in existing:
-                        existing[sz["label"]].in_stock = sz["in_stock"]
-                    else:
-                        session.add(ProductSize(
-                            product_id=product.id,
-                            size_label=sz["label"],
-                            in_stock=sz["in_stock"],
-                        ))
+            # Delete sizes no longer present
+            for label, size_obj in existing.items():
+                if label not in new_labels:
+                    await session.delete(size_obj)
+
+            # Add or update
+            for sz in details.get("sizes", []):
+                if sz["label"] in existing:
+                    existing[sz["label"]].in_stock = sz["in_stock"]
+                else:
+                    session.add(ProductSize(
+                        product_id=product.id,
+                        size_label=sz["label"],
+                        in_stock=sz["in_stock"],
+                    ))
 
             # Update stock on product
             prices = details.get("prices", {})
