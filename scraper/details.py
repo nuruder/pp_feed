@@ -294,7 +294,7 @@ async def extract_product_details(page: Page) -> dict:
                 clean_label = re.sub(
                     r'\s*[-–]\s*(out of stock|agotad[oa]|esgotad[oa]|no disponible).*',
                     '', label, flags=re.IGNORECASE
-                ).strip()
+                ).strip().lstrip("-").strip()
                 # Skip placeholder options like "--- Please Select ---"
                 if clean_label and clean_label != "---" and not clean_label.startswith("---"):
                     details["sizes"].append({

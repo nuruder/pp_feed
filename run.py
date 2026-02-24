@@ -10,6 +10,7 @@ Usage:
     python run.py auth check           # Check if session is valid
     python run.py api                  # Start the API server
     python run.py scheduler            # Start the scheduler daemon
+    python run.py reset                # Drop all tables and recreate (full DB reset)
 """
 
 import asyncio
@@ -66,6 +67,15 @@ def main():
     elif command == "scheduler":
         from scheduler import start_scheduler
         start_scheduler()
+
+    elif command == "reset":
+        confirm = input("This will DELETE all data and recreate tables. Type 'yes' to confirm: ")
+        if confirm.strip().lower() == "yes":
+            from db.database import reset_db
+            asyncio.run(reset_db())
+            print("Database reset complete. All tables dropped and recreated.")
+        else:
+            print("Aborted.")
 
     else:
         print(f"Unknown command: {command}")

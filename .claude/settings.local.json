@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:www.tiendapadelpoint.com)",
+      "Bash(tail:*)",
+      "Bash(source:*)",
+      "Bash(source .venv/bin/activate && python -m scraper.categories 2>&1)",
+      "Bash(source .venv/bin/activate && rm -f data/padelpoint.db && python -c \"\nimport asyncio, sys\nsys.path.insert\\(0, '.'\\)\nfrom db.database import init_db\nasyncio.run\\(init_db\\(\\)\\)\n\" && python -m scraper.categories 2>&1)",
+      "Bash(source .venv/bin/activate && playwright install chromium 2>&1)",
+      "Bash(source .venv/bin/activate && python -c \"\nimport asyncio, sys, logging\nsys.path.insert\\(0, '.'\\)\nlogging.basicConfig\\(level=logging.INFO, format='%\\(asctime\\)s %\\(levelname\\)s %\\(message\\)s'\\)\nlogger = logging.getLogger\\(\\)\n\nimport httpx\nfrom scraper.products import scrape_category_products, extract_datalayer_products\n\nasync def test\\(\\):\n    async with httpx.AsyncClient\\(\n        headers={'User-Agent': 'Mozilla/5.0 \\(Macintosh; Intel Mac OS X 10_15_7\\)'},\n        timeout=30,\n    \\) as client:\n        # Test with Padel Balls category \\(small\\)\n        products = await scrape_category_products\\(\n            client,\n            'https://www.tiendapadelpoint.com/en/padel-balls/pelotas-de-padel-en'\n        \\)\n        for p in products[:5]:\n            print\\(f\\\\\"  {p['name']}: price={p['price']} base={p['base_price']} stock={p['stock']} brand={p['manufacturer']}\\\\\"\\)\n        print\\(f'Total: {len\\(products\\)} products'\\)\n\nasyncio.run\\(test\\(\\)\\)\n\" 2>&1)",
+      "Bash(source .venv/bin/activate && python -c \"\nimport httpx, asyncio, re\n\nasync def test\\(\\):\n    async with httpx.AsyncClient\\(\n        headers={'User-Agent': 'Mozilla/5.0 \\(Macintosh; Intel Mac OS X 10_15_7\\)'},\n        timeout=30,\n    \\) as client:\n        resp = await client.get\\('https://www.tiendapadelpoint.com/en/padel-balls/pelotas-de-padel-en', follow_redirects=True\\)\n        html = resp.text\n        \n        # Search for datalayer patterns\n        patterns = [\n            r'datalayerDataGMT\\\\s*=\\\\s*',\n            r'datalayer',\n            r'\\\\\"products\\\\\"',\n            r'\\\\\"product_id\\\\\"',\n            r'dataLayer\\\\.push',\n        ]\n        for p in patterns:\n            matches = re.findall\\(p, html\\)\n            print\\(f'Pattern \\\\\"{p}\\\\\": {len\\(matches\\)} matches'\\)\n        \n        # Show context around datalayerDataGMT\n        idx = html.find\\('datalayerDataGMT'\\)\n        if idx >= 0:\n            print\\('\\\\\\\\nContext around datalayerDataGMT:'\\)\n            print\\(html[idx:idx+500]\\)\n\nasyncio.run\\(test\\(\\)\\)\n\" 2>&1)",
+      "Bash(source .venv/bin/activate && python -c \"\nimport asyncio, sys, logging\nsys.path.insert\\(0, '.'\\)\nlogging.basicConfig\\(level=logging.INFO, format='%\\(asctime\\)s %\\(levelname\\)s %\\(message\\)s'\\)\n\nimport httpx\nfrom scraper.products import scrape_category_products\n\nasync def test\\(\\):\n    async with httpx.AsyncClient\\(\n        headers={'User-Agent': 'Mozilla/5.0 \\(Macintosh; Intel Mac OS X 10_15_7\\)'},\n        timeout=30,\n    \\) as client:\n        products = await scrape_category_products\\(\n            client,\n            'https://www.tiendapadelpoint.com/en/padel-balls/pelotas-de-padel-en'\n        \\)\n        for p in products[:5]:\n            print\\(f'  {p[\\\\\"name\\\\\"]}: price={p[\\\\\"price\\\\\"]} base={p[\\\\\"base_price\\\\\"]} stock={p[\\\\\"stock\\\\\"]} brand={p[\\\\\"manufacturer\\\\\"]}'\\)\n        print\\(f'Total: {len\\(products\\)} products'\\)\n\nasyncio.run\\(test\\(\\)\\)\n\" 2>&1)",
+      "Bash(source .venv/bin/activate && python -c \"\nimport asyncio, sys\nsys.path.insert\\(0, '.'\\)\nfrom db.database import init_db, AsyncSessionLocal\nfrom scraper.products import scrape_category_products, save_products\n\nasync def test\\(\\):\n    await init_db\\(\\)\n    import httpx\n    async with httpx.AsyncClient\\(\n        headers={'User-Agent': 'Mozilla/5.0 \\(Macintosh; Intel Mac OS X 10_15_7\\)'},\n        timeout=30,\n    \\) as client:\n        products = await scrape_category_products\\(\n            client,\n            'https://www.tiendapadelpoint.com/en/padel-balls/pelotas-de-padel-en'\n        \\)\n    # Save to DB under category_id 5 \\(Padel Balls > Padel Balls\\)\n    from sqlalchemy import select\n    from db.models import Category\n    async with AsyncSessionLocal\\(\\) as session:\n        res = await session.execute\\(select\\(Category\\).where\\(Category.name == 'Padel Balls'\\).where\\(Category.level == 1\\)\\)\n        cat = res.scalar_one_or_none\\(\\)\n        cat_id = cat.id if cat else 1\n    await save_products\\(products, cat_id\\)\n    print\\(f'Saved {len\\(products\\)} products to DB'\\)\n\nasyncio.run\\(test\\(\\)\\)\n\" 2>&1)",
+      "Bash(.venv/bin/python:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git branch:*)",
+      "Bash(git remote:*)",
+      "Bash(grep:*)",
+      "Bash(gh auth:*)",
+      "Bash(brew install:*)",
+      "Bash(HOMEBREW_NO_AUTO_UPDATE=1 brew install:*)",
+      "Bash(curl:*)",
+      "Bash(unzip:*)",
+      "Bash(sudo cp:*)",
+      "Bash(export:*)",
+      "Bash(git config:*)",
+      "Bash(python3:*)",
+      "Bash(git push:*)",
+      "Bash(git:*)",
+      "Bash(python:*)"
+    ]
+  }
+}
