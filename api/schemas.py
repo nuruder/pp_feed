@@ -116,10 +116,34 @@ class ProductDetail(BaseModel):
     model_config = {"from_attributes": True}
 
 
-# --- Paginated response ---
+# --- Paginated responses ---
 
 class PaginatedProducts(BaseModel):
     items: list[ProductShort]
+    total: int
+    page: int
+    page_size: int
+    pages: int
+
+
+class PaginatedBrands(BaseModel):
+    items: list[BrandSchema]
+    total: int
+    page: int
+    page_size: int
+    pages: int
+
+
+class PaginatedProductTypes(BaseModel):
+    items: list[ProductTypeSchema]
+    total: int
+    page: int
+    page_size: int
+    pages: int
+
+
+class PaginatedPrices(BaseModel):
+    items: list[dict]
     total: int
     page: int
     page_size: int

@@ -240,8 +240,6 @@ curl "http://localhost:8000/api/v1/prices/latest?in_stock_only=true"
 # Price history
 curl http://localhost:8000/api/v1/prices/history/42
 
-# Export to Excel
-python run.py export --output catalog.xlsx
 ```
 
 ### Endpoints

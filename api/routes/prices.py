@@ -1,12 +1,13 @@
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, func
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from db.database import get_db
-from db.models import PriceSnapshot, Product, product_categories
-from api.schemas import PriceSnapshotSchema
+from db.models import PriceSnapshot, Product, Brand, product_categories
+from api.schemas import PriceSnapshotSchema, PaginatedPrices
 
 router = APIRouter(prefix="/prices", tags=["Prices"])
 
@@ -39,9 +40,10 @@ async def price_history(
     return [PriceSnapshotSchema.model_validate(s) for s in snapshots]
 
 
-@router.get("/latest", response_model=list[dict])
+@router.get("/latest", response_model=PaginatedPrices)
 async def latest_prices(
     category_id: int | None = None,
+    product_type_id: int | None = None,
     brand_name: str | None = None,
     in_stock_only: bool = False,
     page: int = Query(1, ge=1),
@@ -52,18 +54,24 @@ async def latest_prices(
     Get latest prices for all products (bulk endpoint).
     Useful for syncing with external systems.
     """
-    from sqlalchemy.orm import selectinload
-
     query = select(Product).options(selectinload(Product.brand))
 
     if category_id is not None:
         query = query.join(product_categories).where(
             product_categories.c.category_id == category_id
         )
+    if product_type_id is not None:
+        query = query.where(Product.product_type_id == product_type_id)
     if brand_name:
-        from db.models import Brand
         query = query.join(Brand).where(Brand.name.ilike(f"%{brand_name}%"))
+    if in_stock_only:
+        query = query.where(Product.in_stock.is_(True))
 
+    # Total count
+    count_q = select(func.count()).select_from(query.subquery())
+    total = await db.scalar(count_q) or 0
+
+    # Paginated query
     offset = (page - 1) * page_size
     query = query.order_by(Product.name).offset(offset).limit(page_size)
 
@@ -80,9 +88,6 @@ async def latest_prices(
         )
         latest = snap_result.scalar_one_or_none()
 
-        if in_stock_only and (not latest or not latest.in_stock):
-            continue
-
         items.append({
             "product_id": product.id,
             "external_id": product.external_id,
@@ -92,9 +97,18 @@ async def latest_prices(
             "price_original": latest.price_original if latest else None,
             "price_special": latest.price_special if latest else None,
             "price_wholesale": latest.price_wholesale if latest else None,
-            "stock_quantity": latest.stock_quantity if latest else 0,
-            "in_stock": latest.in_stock if latest else False,
+            "price_without_tax": latest.price_without_tax if latest else None,
+            "stock_quantity": product.stock_quantity or 0,
+            "in_stock": product.in_stock or False,
             "last_updated": latest.timestamp.isoformat() if latest else None,
         })
 
-    return items
+    pages = (total + page_size - 1) // page_size if total else 0
+
+    return PaginatedPrices(
+        items=items,
+        total=total,
+        page=page,
+        page_size=page_size,
+        pages=pages,
+    )

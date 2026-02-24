@@ -15,9 +15,6 @@ fastapi>=0.111
 uvicorn[standard]>=0.30
 pydantic>=2.7
 
-# Export
-openpyxl>=3.1
-
 # Scheduling
 apscheduler>=3.10
 

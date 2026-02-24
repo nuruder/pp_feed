@@ -9,7 +9,6 @@ Usage:
     python run.py auth interactive     # Force interactive login
     python run.py auth check           # Check if session is valid
     python run.py api                  # Start the API server
-    python run.py export [--output X]  # Export to Excel
     python run.py scheduler            # Start the scheduler daemon
 """
 
@@ -63,14 +62,6 @@ def main():
         import uvicorn
         from config import API_HOST, API_PORT
         uvicorn.run("api.main:app", host=API_HOST, port=API_PORT, reload=True)
-
-    elif command == "export":
-        from export.excel import export_to_excel
-        output = None
-        for i, arg in enumerate(sys.argv):
-            if arg == "--output" and i + 1 < len(sys.argv):
-                output = sys.argv[i + 1]
-        asyncio.run(export_to_excel(output))
 
     elif command == "scheduler":
         from scheduler import start_scheduler
