@@ -3,7 +3,7 @@ Load categories from categories.txt and upsert into the database.
 
 File format (one category per line):
     Name, URL
-    Name, URL1, URL2, URL3   (multiple URLs → one category)
+    Name, URL1 URL2 URL3   (multiple URLs → one category)
 
 Lines starting with # and empty lines are ignored.
 
@@ -35,14 +35,14 @@ def load_categories_from_file() -> list[dict]:
         if not line or line.startswith("#"):
             continue
 
-        # Split on commas: "Name, URL1, URL2, ..."
-        parts = [p.strip() for p in line.split(",")]
-        if len(parts) < 2:
-            logger.warning("Line %d: invalid format (expected 'Name, URL[, URL2, ...]'): %s", line_num, line)
+        # Split on first comma: "Name, URL1 URL2 URL3 ..."
+        parts = line.split(",", 1)
+        if len(parts) != 2:
+            logger.warning("Line %d: invalid format (expected 'Name, URL [URL2 ...]'): %s", line_num, line)
             continue
 
-        name = parts[0]
-        urls = [u for u in parts[1:] if u]
+        name = parts[0].strip()
+        urls = parts[1].strip().split()
 
         if not name or not urls:
             logger.warning("Line %d: empty name or URL: %s", line_num, line)
