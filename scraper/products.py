@@ -363,8 +363,20 @@ async def save_products(products: list[dict], category_id: int):
 
 
 async def scrape_all_categories():
-    """Scrape products from all leaf categories in the DB."""
+    """Scrape products from all categories in the DB.
+
+    Supports multiple URLs per category: loads URL list from categories.txt
+    and merges products from all URLs into the same category.
+    """
     await init_db()
+
+    from scraper.categories import load_categories_from_file
+
+    # Build mapping: canonical_url → list of all URLs
+    file_cats = load_categories_from_file()
+    url_map = {}  # canonical_url → [url1, url2, ...]
+    for fc in file_cats:
+        url_map[fc["urls"][0]] = fc["urls"]
 
     async with AsyncSessionLocal() as session:
         result = await session.execute(select(Category).where(Category.level > 0))
@@ -382,11 +394,21 @@ async def scrape_all_categories():
 
     async def _scrape_category(client, cat):
         async with semaphore:
-            logger.info("Category: %s", cat.name)
-            products = await scrape_category_products(client, cat.url)
-            if products:
-                await save_products(products, cat.id)
-                total_count["n"] += len(products)
+            urls = url_map.get(cat.url, [cat.url])
+            logger.info("Category: %s (%d URLs)", cat.name, len(urls))
+
+            all_products = []
+            seen_ids = set()
+            for url in urls:
+                products = await scrape_category_products(client, url)
+                for p in products:
+                    if p["external_id"] not in seen_ids:
+                        seen_ids.add(p["external_id"])
+                        all_products.append(p)
+
+            if all_products:
+                await save_products(all_products, cat.id)
+                total_count["n"] += len(all_products)
             await asyncio.sleep(REQUEST_DELAY)
 
     async with httpx.AsyncClient(

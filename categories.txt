@@ -1,6 +1,7 @@
 # Категории для парсинга
-# Формат: Название, URL
-# Одна категория на строку. Пустые строки и строки с # игнорируются.
+# Формат: Название, URL1[, URL2, URL3, ...]
+# Несколько URL через запятую → товары из всех URL попадают в одну категорию.
+# Пустые строки и строки с # игнорируются.
 
 Padel Rackets, https://www.tiendapadelpoint.com/en/padel-rackets-en
 Padel Shoes, https://www.tiendapadelpoint.com/en/padel-shoes

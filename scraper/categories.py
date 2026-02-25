@@ -2,7 +2,8 @@
 Load categories from categories.txt and upsert into the database.
 
 File format (one category per line):
-    Name, https://example.com/category-url
+    Name, URL
+    Name, URL1, URL2, URL3   (multiple URLs → one category)
 
 Lines starting with # and empty lines are ignored.
 
@@ -34,45 +35,46 @@ def load_categories_from_file() -> list[dict]:
         if not line or line.startswith("#"):
             continue
 
-        # Split on first comma: "Name, URL"
-        parts = line.split(",", 1)
-        if len(parts) != 2:
-            logger.warning("Line %d: invalid format (expected 'Name, URL'): %s", line_num, line)
+        # Split on commas: "Name, URL1, URL2, ..."
+        parts = [p.strip() for p in line.split(",")]
+        if len(parts) < 2:
+            logger.warning("Line %d: invalid format (expected 'Name, URL[, URL2, ...]'): %s", line_num, line)
             continue
 
-        name = parts[0].strip()
-        url = parts[1].strip()
+        name = parts[0]
+        urls = [u for u in parts[1:] if u]
 
-        if not name or not url:
+        if not name or not urls:
             logger.warning("Line %d: empty name or URL: %s", line_num, line)
             continue
 
-        categories.append({"name": name, "url": url})
+        categories.append({"name": name, "urls": urls})
 
     return categories
 
 
 async def save_categories(categories: list[dict]):
-    """Upsert categories into the database."""
+    """Upsert categories into the database. Uses first URL as the canonical URL."""
     async with AsyncSessionLocal() as session:
         async with session.begin():
             for cat in categories:
+                canonical_url = cat["urls"][0]
                 result = await session.execute(
-                    select(Category).where(Category.url == cat["url"])
+                    select(Category).where(Category.url == canonical_url)
                 )
                 existing = result.scalar_one_or_none()
                 if existing:
                     existing.name = cat["name"]
                     existing.level = 0
-                    logger.info("  Updated: %s", cat["name"])
+                    logger.info("  Updated: %s (%d URLs)", cat["name"], len(cat["urls"]))
                 else:
                     session.add(Category(
                         name=cat["name"],
-                        url=cat["url"],
+                        url=canonical_url,
                         parent_id=None,
                         level=0,
                     ))
-                    logger.info("  Added: %s", cat["name"])
+                    logger.info("  Added: %s (%d URLs)", cat["name"], len(cat["urls"]))
 
 
 async def sync_categories() -> list[dict]:
