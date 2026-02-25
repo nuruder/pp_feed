@@ -21,7 +21,7 @@ router = APIRouter(prefix="/webapp", tags=["Web App"])
 
 # --- Margin filter constants ---
 MIN_MARGIN_EUR = 5.0
-MIN_MARGIN_PCT = 0.10
+MIN_MARGIN_PCT = 0.05
 
 
 def _customer_price(price_regular: float, price_wholesale: float) -> float:
@@ -287,8 +287,9 @@ async def create_order(
     await db.commit()
     await db.refresh(order, attribute_names=["items"])
 
-    # Load product names for response
+    # Load product names and wholesale prices for response/notification
     item_schemas = []
+    wholesale_prices = {}  # product_id -> wholesale price
     for oi in order.items:
         result = await db.execute(select(Product.name).where(Product.id == oi.product_id))
         product_name = result.scalar_one()
@@ -299,10 +300,13 @@ async def create_order(
             quantity=oi.quantity,
             price=oi.price,
         ))
+        snap = await _get_latest_snapshot(db, oi.product_id)
+        if snap and snap.price_wholesale:
+            wholesale_prices[oi.product_id] = snap.price_wholesale
 
     # Notify manager via bot
     try:
-        await _notify_manager(order, item_schemas, data)
+        await _notify_manager(order, item_schemas, data, wholesale_prices)
     except Exception as e:
         logger.error("Failed to notify manager: %s", e, exc_info=True)
 
@@ -342,10 +346,12 @@ async def test_notify():
         await bot.session.close()
 
 
-async def _notify_manager(order, items, data):
+async def _notify_manager(order, items, data, wholesale_prices=None):
     """Send order notification to manager via Telegram."""
     from aiogram import Bot
     from config import TELEGRAM_BOT_TOKEN, MANAGER_CHAT_ID
+
+    wholesale_prices = wholesale_prices or {}
 
     if not MANAGER_CHAT_ID:
         logger.warning("MANAGER_CHAT_ID not set, skipping notification")
@@ -364,14 +370,22 @@ async def _notify_manager(order, items, data):
         lines.append(f"\U0001f4ac @{data.username}")
 
     lines.append("")
+    total_wholesale = 0.0
     for item in items:
         size_str = f" (р. {item.size_label})" if item.size_label else ""
+        ws = wholesale_prices.get(item.product_id)
+        ws_str = f" (опт \u20ac{ws:.2f})" if ws else ""
         lines.append(
             f"  \u2022 {item.product_name}{size_str} "
-            f"\u00d7{item.quantity} — \u20ac{item.price:.2f}"
+            f"\u00d7{item.quantity} \u2014 \u20ac{item.price:.2f}{ws_str}"
         )
+        if ws:
+            total_wholesale += ws * item.quantity
 
+    margin = order.total - total_wholesale
     lines.append(f"\n\U0001f4b0 Итого: \u20ac{order.total:.2f}")
+    if total_wholesale > 0:
+        lines.append(f"\U0001f4c8 Маржа: \u20ac{margin:.2f}")
 
     bot = Bot(token=TELEGRAM_BOT_TOKEN)
     try:
