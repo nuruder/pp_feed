@@ -111,7 +111,7 @@ const ProductPage = {
         const galleryHtml = this._renderGallery();
 
         const stockClass = p.in_stock ? 'stock-in' : 'stock-out';
-        const stockText = p.in_stock ? `В наличии (${p.stock_quantity} шт.)` : 'Нет в наличии';
+        const stockText = p.in_stock ? `В наличии (${p.stock_quantity < 5 ? 'мало' : 'много'})` : 'Нет в наличии';
 
         // Sizes
         const availableSizes = (p.sizes || []).filter(s => s.in_stock);
