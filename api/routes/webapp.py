@@ -287,26 +287,30 @@ async def create_order(
     await db.commit()
     await db.refresh(order, attribute_names=["items"])
 
-    # Load product names and wholesale prices for response/notification
+    # Load product info for response/notification
     item_schemas = []
     wholesale_prices = {}  # product_id -> wholesale price
+    product_urls = {}      # product_id -> url
     for oi in order.items:
-        result = await db.execute(select(Product.name).where(Product.id == oi.product_id))
-        product_name = result.scalar_one()
+        result = await db.execute(
+            select(Product.name, Product.url).where(Product.id == oi.product_id)
+        )
+        row = result.one()
         item_schemas.append(OrderItemSchema(
             product_id=oi.product_id,
-            product_name=product_name,
+            product_name=row.name,
             size_label=oi.size_label,
             quantity=oi.quantity,
             price=oi.price,
         ))
+        product_urls[oi.product_id] = row.url
         snap = await _get_latest_snapshot(db, oi.product_id)
         if snap and snap.price_wholesale:
             wholesale_prices[oi.product_id] = snap.price_wholesale
 
     # Notify manager via bot
     try:
-        await _notify_manager(order, item_schemas, data, wholesale_prices)
+        await _notify_manager(order, item_schemas, data, wholesale_prices, product_urls)
     except Exception as e:
         logger.error("Failed to notify manager: %s", e, exc_info=True)
 
@@ -346,12 +350,14 @@ async def test_notify():
         await bot.session.close()
 
 
-async def _notify_manager(order, items, data, wholesale_prices=None):
-    """Send order notification to manager via Telegram."""
+async def _notify_manager(order, items, data, wholesale_prices=None, product_urls=None):
+    """Send order notification to manager via Telegram (HTML)."""
     from aiogram import Bot
+    from aiogram.enums import ParseMode
     from config import TELEGRAM_BOT_TOKEN, MANAGER_CHAT_ID
 
     wholesale_prices = wholesale_prices or {}
+    product_urls = product_urls or {}
 
     if not MANAGER_CHAT_ID:
         logger.warning("MANAGER_CHAT_ID not set, skipping notification")
@@ -375,8 +381,10 @@ async def _notify_manager(order, items, data, wholesale_prices=None):
         size_str = f" (р. {item.size_label})" if item.size_label else ""
         ws = wholesale_prices.get(item.product_id)
         ws_str = f" (опт \u20ac{ws:.2f})" if ws else ""
+        url = product_urls.get(item.product_id)
+        name_html = f'<a href="{url}">{item.product_name}</a>' if url else item.product_name
         lines.append(
-            f"  \u2022 {item.product_name}{size_str} "
+            f"  \u2022 {name_html}{size_str} "
             f"\u00d7{item.quantity} \u2014 \u20ac{item.price:.2f}{ws_str}"
         )
         if ws:
@@ -389,7 +397,9 @@ async def _notify_manager(order, items, data, wholesale_prices=None):
 
     bot = Bot(token=TELEGRAM_BOT_TOKEN)
     try:
-        await bot.send_message(MANAGER_CHAT_ID, "\n".join(lines))
+        await bot.send_message(
+            MANAGER_CHAT_ID, "\n".join(lines), parse_mode=ParseMode.HTML,
+        )
         logger.info("Order #%d notification sent to chat %s", order.id, MANAGER_CHAT_ID)
     finally:
         await bot.session.close()
