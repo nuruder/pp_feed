@@ -85,7 +85,7 @@ async def _send_product(message: Message, product: Product, snapshot: PriceSnaps
 
 @router.message(CommandStart())
 async def handle_start(message: Message, bot: Bot):
-    text = "Добро пожаловать! Я помогу найти товары для падель-тенниса."
+    text = "Добро пожаловать! Я помогу найти товары для падела."
     if WEBAPP_URL:
         text += "\n\nНажмите кнопку «Каталог» внизу, чтобы открыть магазин."
         await bot.set_chat_menu_button(
