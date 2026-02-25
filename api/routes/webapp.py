@@ -37,6 +37,49 @@ def _has_margin(price_regular: float | None, price_wholesale: float | None) -> b
     return diff >= MIN_MARGIN_EUR and diff / price_regular >= MIN_MARGIN_PCT
 
 
+def _marginal_subquery():
+    """
+    Subquery returning (product_id, price_regular, price_wholesale)
+    for products whose latest snapshot passes the margin filter.
+    Single SQL instead of N+1 queries.
+    """
+    # Step 1: rank snapshots per product by timestamp (newest first)
+    ranked = (
+        select(
+            PriceSnapshot.product_id,
+            PriceSnapshot.price_regular,
+            PriceSnapshot.price_wholesale,
+            func.row_number().over(
+                partition_by=PriceSnapshot.product_id,
+                order_by=desc(PriceSnapshot.timestamp),
+            ).label("rn"),
+        )
+        .where(PriceSnapshot.price_regular.isnot(None))
+        .where(PriceSnapshot.price_wholesale.isnot(None))
+        .subquery()
+    )
+
+    # Step 2: keep only latest (rn=1) + margin filter
+    marginal = (
+        select(
+            ranked.c.product_id,
+            ranked.c.price_regular,
+            ranked.c.price_wholesale,
+        )
+        .where(ranked.c.rn == 1)
+        .where(
+            (ranked.c.price_regular - ranked.c.price_wholesale) >= MIN_MARGIN_EUR
+        )
+        .where(
+            (ranked.c.price_regular - ranked.c.price_wholesale)
+            / ranked.c.price_regular >= MIN_MARGIN_PCT
+        )
+        .subquery()
+    )
+
+    return marginal
+
+
 async def _get_latest_snapshot(db: AsyncSession, product_id: int) -> PriceSnapshot | None:
     result = await db.execute(
         select(PriceSnapshot)
@@ -51,33 +94,32 @@ async def _get_latest_snapshot(db: AsyncSession, product_id: int) -> PriceSnapsh
 
 @router.get("/categories", response_model=list[WebAppCategory])
 async def webapp_categories(db: AsyncSession = Depends(get_db)):
-    """Get categories that have marginal products."""
-    result = await db.execute(
-        select(Category).where(Category.level == 0).order_by(Category.name)
-    )
-    categories = result.scalars().all()
+    """Get categories that have marginal products (single SQL query)."""
+    marginal = _marginal_subquery()
 
-    items = []
-    for cat in categories:
-        # Count products in this category that have margin
-        prod_result = await db.execute(
-            select(Product.id)
-            .join(product_categories)
-            .where(product_categories.c.category_id == cat.id)
-            .where(Product.in_stock.is_(True))
+    query = (
+        select(
+            Category.id,
+            Category.name,
+            func.count(marginal.c.product_id).label("cnt"),
         )
-        product_ids = [row[0] for row in prod_result.all()]
+        .join(product_categories, product_categories.c.category_id == Category.id)
+        .join(Product, Product.id == product_categories.c.product_id)
+        .join(marginal, marginal.c.product_id == Product.id)
+        .where(Category.level == 0)
+        .where(Product.in_stock.is_(True))
+        .group_by(Category.id, Category.name)
+        .having(func.count(marginal.c.product_id) > 0)
+        .order_by(Category.name)
+    )
 
-        count = 0
-        for pid in product_ids:
-            snap = await _get_latest_snapshot(db, pid)
-            if snap and _has_margin(snap.price_regular, snap.price_wholesale):
-                count += 1
+    result = await db.execute(query)
+    rows = result.all()
 
-        if count > 0:
-            items.append(WebAppCategory(id=cat.id, name=cat.name, products_count=count))
-
-    return items
+    return [
+        WebAppCategory(id=row.id, name=row.name, products_count=row.cnt)
+        for row in rows
+    ]
 
 
 # ---------- Products ----------
@@ -90,10 +132,19 @@ async def webapp_products(
     page_size: int = Query(20, ge=1, le=50),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get marginal products for the catalog."""
+    """Get marginal products for the catalog (single SQL query)."""
+    marginal = _marginal_subquery()
+
     query = (
-        select(Product)
-        .options(selectinload(Product.brand))
+        select(
+            Product.id,
+            Product.name,
+            Product.image_url,
+            Product.in_stock,
+            marginal.c.price_regular,
+            marginal.c.price_wholesale,
+        )
+        .join(marginal, marginal.c.product_id == Product.id)
         .where(Product.in_stock.is_(True))
     )
 
@@ -104,33 +155,30 @@ async def webapp_products(
     if search:
         query = query.where(Product.name.ilike(f"%{search}%"))
 
-    query = query.order_by(Product.name)
+    # Total count
+    count_q = select(func.count()).select_from(query.subquery())
+    total = await db.scalar(count_q) or 0
+
+    # Paginate at SQL level
+    offset = (page - 1) * page_size
+    query = query.order_by(Product.name).offset(offset).limit(page_size)
+
     result = await db.execute(query)
-    all_products = result.scalars().unique().all()
+    rows = result.all()
 
-    # Filter by margin (requires latest snapshot)
-    filtered = []
-    for product in all_products:
-        snap = await _get_latest_snapshot(db, product.id)
-        if snap and _has_margin(snap.price_regular, snap.price_wholesale):
-            filtered.append((product, snap))
+    items = [
+        WebAppProductShort(
+            id=row.id,
+            name=row.name,
+            image_url=row.image_url,
+            price=_customer_price(row.price_regular, row.price_wholesale),
+            price_old=row.price_regular,
+            in_stock=row.in_stock or False,
+        )
+        for row in rows
+    ]
 
-    total = len(filtered)
     pages = math.ceil(total / page_size) if total else 0
-    start = (page - 1) * page_size
-    page_items = filtered[start:start + page_size]
-
-    items = []
-    for product, snap in page_items:
-        items.append(WebAppProductShort(
-            id=product.id,
-            name=product.name,
-            image_url=product.image_url,
-            price=_customer_price(snap.price_regular, snap.price_wholesale),
-            price_old=snap.price_regular,
-            in_stock=product.in_stock or False,
-        ))
-
     return {"items": items, "total": total, "page": page, "pages": pages}
 
 
