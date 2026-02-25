@@ -92,6 +92,16 @@ const Catalog = {
             || this.priceMin !== null || this.priceMax !== null;
     },
 
+    filtersOpen: false,
+
+    toggleFilters() {
+        this.filtersOpen = !this.filtersOpen;
+        const body = document.getElementById('filters-body');
+        const toggle = document.getElementById('filters-toggle');
+        if (body) body.style.display = this.filtersOpen ? 'block' : 'none';
+        if (toggle) toggle.textContent = this.filtersOpen ? '\u25B2' : '\u25BC';
+    },
+
     _renderFilters() {
         if (!this.filters) return '';
 
@@ -99,7 +109,15 @@ const Catalog = {
         const hasContent = brands.length > 1 || sizes.length > 1 || (price_min != null && price_max != null && price_min !== price_max);
         if (!hasContent) return '';
 
+        const active = this._hasActiveFilters();
+        const isOpen = this.filtersOpen || active;
+
         let html = '<div class="filters-section">';
+        html += `<div class="filters-header" onclick="Catalog.toggleFilters()">`;
+        html += `<span class="filters-title">Фильтры${active ? ' \u2022' : ''}</span>`;
+        html += `<span class="filters-toggle" id="filters-toggle">${isOpen ? '\u25B2' : '\u25BC'}</span>`;
+        html += '</div>';
+        html += `<div class="filters-body" id="filters-body" style="display:${isOpen ? 'block' : 'none'}">`;
 
         // Price range
         if (price_min != null && price_max != null && price_min !== price_max) {
@@ -135,11 +153,11 @@ const Catalog = {
             html += '</div></div>';
         }
 
-        if (this._hasActiveFilters()) {
+        if (active) {
             html += '<button class="filter-reset" onclick="Catalog.resetFilters()">Сбросить фильтры</button>';
         }
 
-        html += '</div>';
+        html += '</div></div>';
         return html;
     },
 

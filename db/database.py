@@ -1,7 +1,7 @@
 import ssl as _ssl
 
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy import make_url
+from sqlalchemy import make_url, text
 from db.models import Base
 from config import DATABASE_URL
 
@@ -34,6 +34,21 @@ async def reset_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
+
+
+async def migrate_indexes():
+    """Create indexes if they don't exist (safe to run on existing DB)."""
+    indexes = [
+        ("ix_products_brand_id", "products", "brand_id"),
+        ("ix_products_in_stock", "products", "in_stock"),
+        ("ix_product_sizes_product_instock", "product_sizes", "product_id, in_stock"),
+        ("ix_price_snapshots_product_ts", "price_snapshots", "product_id, timestamp DESC"),
+    ]
+    async with engine.begin() as conn:
+        for name, table, columns in indexes:
+            await conn.execute(text(
+                f"CREATE INDEX IF NOT EXISTS {name} ON {table} ({columns})"
+            ))
 
 
 async def get_db():

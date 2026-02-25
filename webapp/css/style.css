@@ -131,6 +131,32 @@ main {
 /* Filters */
 .filters-section {
     margin-bottom: 12px;
+    background: var(--tg-secondary-bg);
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.filters-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.filters-title {
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.filters-toggle {
+    font-size: 12px;
+    color: var(--tg-hint);
+}
+
+.filters-body {
+    padding: 0 12px 10px;
 }
 
 .filter-group {

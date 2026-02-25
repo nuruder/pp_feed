@@ -1,7 +1,7 @@
 from datetime import datetime
 from sqlalchemy import (
     Column, Integer, String, Float, Text, Boolean,
-    ForeignKey, DateTime, UniqueConstraint, Table,
+    ForeignKey, DateTime, UniqueConstraint, Index, Table,
 )
 from sqlalchemy.orm import DeclarativeBase, relationship
 
@@ -62,11 +62,11 @@ class Product(Base):
     url = Column(String(512), nullable=False)
     image_url = Column(String(512), nullable=True)
     description = Column(Text, nullable=True)
-    brand_id = Column(Integer, ForeignKey("brands.id"), nullable=True)
+    brand_id = Column(Integer, ForeignKey("brands.id"), nullable=True, index=True)
     product_type_id = Column(Integer, ForeignKey("product_types.id"), nullable=True)
     model = Column(String(255), nullable=True)
     stock_quantity = Column(Integer, default=0)
-    in_stock = Column(Boolean, default=False)
+    in_stock = Column(Boolean, default=False, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -91,6 +91,7 @@ class ProductSize(Base):
 
     __table_args__ = (
         UniqueConstraint("product_id", "size_label", name="uq_product_size"),
+        Index("ix_product_sizes_product_instock", "product_id", "in_stock"),
     )
 
 
@@ -117,6 +118,10 @@ class PriceSnapshot(Base):
     in_stock = Column(Boolean, default=False)
 
     product = relationship("Product", back_populates="price_snapshots")
+
+    __table_args__ = (
+        Index("ix_price_snapshots_product_ts", "product_id", timestamp.desc()),
+    )
 
 
 class TgUser(Base):

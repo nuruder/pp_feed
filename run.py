@@ -11,6 +11,7 @@ Usage:
     python run.py api                  # Start the API server
     python run.py scheduler            # Start the scheduler daemon
     python run.py bot                  # Start the Telegram bot
+    python run.py migrate              # Create DB indexes (safe to re-run)
     python run.py reset                # Drop all tables and recreate (full DB reset)
 """
 
@@ -72,6 +73,11 @@ def main():
     elif command == "bot":
         from bot.handlers import start_bot
         asyncio.run(start_bot())
+
+    elif command == "migrate":
+        from db.database import migrate_indexes
+        asyncio.run(migrate_indexes())
+        print("Indexes created.")
 
     elif command == "reset":
         confirm = input("This will DELETE all data and recreate tables. Type 'yes' to confirm: ")
