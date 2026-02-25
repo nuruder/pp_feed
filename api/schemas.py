@@ -150,6 +150,79 @@ class PaginatedPrices(BaseModel):
     pages: int
 
 
+# --- Web App schemas ---
+
+class WebAppCategory(BaseModel):
+    id: int
+    name: str
+    products_count: int = 0
+
+    model_config = {"from_attributes": True}
+
+
+class WebAppProductShort(BaseModel):
+    id: int
+    name: str
+    image_url: str | None = None
+    price: float          # customer price = (wholesale + regular) / 2
+    price_old: float      # strikethrough = price_regular
+    in_stock: bool = False
+
+    model_config = {"from_attributes": True}
+
+
+class WebAppProductDetail(BaseModel):
+    id: int
+    name: str
+    image_url: str | None = None
+    description: str | None = None
+    price: float
+    price_old: float
+    in_stock: bool = False
+    stock_quantity: int = 0
+    sizes: list[SizeSchema] = []
+
+    model_config = {"from_attributes": True}
+
+
+class OrderItemCreate(BaseModel):
+    product_id: int
+    size_label: str | None = None
+    quantity: int = 1
+
+
+class OrderCreate(BaseModel):
+    user_id: int
+    user_first_name: str | None = None
+    user_last_name: str | None = None
+    username: str | None = None
+    customer_name: str
+    customer_phone: str
+    items: list[OrderItemCreate]
+
+
+class OrderItemSchema(BaseModel):
+    product_id: int
+    product_name: str
+    size_label: str | None = None
+    quantity: int
+    price: float
+
+    model_config = {"from_attributes": True}
+
+
+class OrderSchema(BaseModel):
+    id: int
+    status: str
+    customer_name: str
+    customer_phone: str
+    total: float
+    items: list[OrderItemSchema]
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 # --- Stats ---
 
 class StatsSchema(BaseModel):

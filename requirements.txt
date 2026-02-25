@@ -21,5 +21,8 @@ apscheduler>=3.10
 # CAPTCHA solving
 2captcha-python>=1.5
 
+# Telegram bot
+aiogram>=3.10
+
 # Utils
 python-dotenv>=1.0

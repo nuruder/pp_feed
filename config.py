@@ -29,6 +29,11 @@ REQUEST_DELAY = float(os.getenv("REQUEST_DELAY", "1.5"))  # seconds between requ
 CONCURRENT_PAGES = int(os.getenv("CONCURRENT_PAGES", "3"))
 PAGE_TIMEOUT = int(os.getenv("PAGE_TIMEOUT", "30000"))  # ms
 
+# Telegram bot
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+MANAGER_CHAT_ID = int(os.getenv("MANAGER_CHAT_ID", "0"))
+WEBAPP_URL = os.getenv("WEBAPP_URL", "")
+
 # API settings
 API_HOST = os.getenv("API_HOST", "0.0.0.0")
 API_PORT = int(os.getenv("API_PORT", "8000"))

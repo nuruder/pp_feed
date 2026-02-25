@@ -10,8 +10,11 @@ Docs:
 
 from contextlib import asynccontextmanager
 from datetime import datetime
+from pathlib import Path
 
 from fastapi import FastAPI, Depends
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select, func, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,6 +26,7 @@ from api.routes.products import router as products_router
 from api.routes.brands import router as brands_router
 from api.routes.product_types import router as product_types_router
 from api.routes.prices import router as prices_router
+from api.routes.webapp import router as webapp_router
 
 
 @asynccontextmanager
@@ -38,11 +42,24 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(categories_router, prefix="/api/v1")
 app.include_router(products_router, prefix="/api/v1")
 app.include_router(brands_router, prefix="/api/v1")
 app.include_router(product_types_router, prefix="/api/v1")
 app.include_router(prices_router, prefix="/api/v1")
+app.include_router(webapp_router, prefix="/api/v1")
+
+# Serve Web App frontend
+_webapp_dir = Path(__file__).resolve().parent.parent / "webapp"
+if _webapp_dir.is_dir():
+    app.mount("/app", StaticFiles(directory=str(_webapp_dir), html=True), name="webapp")
 
 
 @app.get("/api/v1/stats", response_model=StatsSchema, tags=["Stats"])

@@ -143,6 +143,28 @@ WantedBy=multi-user.target
 EOF
 ```
 
+#### Telegram bot
+
+```bash
+sudo tee /etc/systemd/system/padelpoint-bot.service << 'EOF'
+[Unit]
+Description=PadelPoint Telegram Bot
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/opt/pp_parser
+ExecStart=/opt/pp_parser/.venv/bin/python run.py bot
+Restart=always
+RestartSec=10
+Environment=PATH=/opt/pp_parser/.venv/bin:/usr/bin:/bin
+
+[Install]
+WantedBy=multi-user.target
+EOF
+```
+
 #### Enable and start
 
 ```bash
@@ -150,13 +172,14 @@ EOF
 sudo chown -R www-data:www-data /opt/pp_parser/data
 
 sudo systemctl daemon-reload
-sudo systemctl enable padelpoint-scheduler padelpoint-api
-sudo systemctl start padelpoint-scheduler padelpoint-api
+sudo systemctl enable padelpoint-scheduler padelpoint-api padelpoint-bot
+sudo systemctl start padelpoint-scheduler padelpoint-api padelpoint-bot
 
 # Check status
 sudo systemctl status padelpoint-scheduler
 sudo systemctl status padelpoint-api
-sudo journalctl -u padelpoint-api -f
+sudo systemctl status padelpoint-bot
+sudo journalctl -u padelpoint-bot -f
 ```
 
 ### 7. Nginx reverse proxy (optional)
@@ -212,6 +235,56 @@ A 2Captcha API key enables fully automated headless login (no display needed).
 3. Set `TWOCAPTCHA_API_KEY` in `.env`
 
 Without a key, login falls back to manual mode (requires a browser window).
+
+### Telegram Bot Setup
+
+1. Create a bot via [@BotFather](https://t.me/BotFather) in Telegram
+2. Copy the token and set `TELEGRAM_BOT_TOKEN` in `.env`
+3. Start: `python run.py bot`
+
+The bot accepts:
+- **Product URL** — returns a card with image, prices, and stock info
+- **Multiple URLs** — returns a card for each found product
+- **Text query** — searches by product name, returns up to 5 results
+
+### Telegram Web App (Online Shop)
+
+#### Get MANAGER_CHAT_ID
+
+This is the Telegram ID where order notifications are sent.
+
+Open [@userinfobot](https://t.me/userinfobot) in Telegram, press Start — it shows your numeric ID (e.g. `512345678`).
+
+For a group chat: add the bot to the group, send a message, then check `https://api.telegram.org/bot<TOKEN>/getUpdates` for `"chat":{"id":-100...}`.
+
+#### Configure HTTPS and Web App
+
+Telegram Web App requires HTTPS. Add to Nginx config:
+
+```nginx
+location /app {
+    alias /opt/pp_parser/webapp;
+    try_files $uri $uri/ /app/index.html;
+}
+```
+
+Get SSL if needed:
+```bash
+sudo certbot --nginx -d your-domain.com
+```
+
+#### Set up in BotFather
+
+1. `/mybots` → select bot → **Bot Settings** → **Menu Button**
+2. Enter URL: `https://your-domain.com/app`
+3. Enter button text: `Каталог`
+
+#### Add to .env
+
+```
+MANAGER_CHAT_ID=512345678
+WEBAPP_URL=https://your-domain.com/app
+```
 
 ---
 
