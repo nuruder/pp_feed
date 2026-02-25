@@ -304,7 +304,7 @@ async def create_order(
     try:
         await _notify_manager(order, item_schemas, data)
     except Exception as e:
-        logger.error("Failed to notify manager: %s", e)
+        logger.error("Failed to notify manager: %s", e, exc_info=True)
 
     return OrderSchema(
         id=order.id,
@@ -317,6 +317,31 @@ async def create_order(
     )
 
 
+@router.get("/test-notify")
+async def test_notify():
+    """Debug endpoint: test sending a message to MANAGER_CHAT_ID. Remove after debugging."""
+    from aiogram import Bot
+    from config import TELEGRAM_BOT_TOKEN, MANAGER_CHAT_ID
+
+    info = {
+        "token_set": bool(TELEGRAM_BOT_TOKEN),
+        "token_preview": TELEGRAM_BOT_TOKEN[:10] + "..." if TELEGRAM_BOT_TOKEN else "",
+        "chat_id": MANAGER_CHAT_ID,
+    }
+
+    if not TELEGRAM_BOT_TOKEN or not MANAGER_CHAT_ID:
+        return {**info, "error": "TELEGRAM_BOT_TOKEN or MANAGER_CHAT_ID not set"}
+
+    bot = Bot(token=TELEGRAM_BOT_TOKEN)
+    try:
+        result = await bot.send_message(MANAGER_CHAT_ID, "Test notification from PadelPoint Web App")
+        return {**info, "success": True, "message_id": result.message_id}
+    except Exception as e:
+        return {**info, "success": False, "error": str(e)}
+    finally:
+        await bot.session.close()
+
+
 async def _notify_manager(order, items, data):
     """Send order notification to manager via Telegram."""
     from aiogram import Bot
@@ -324,6 +349,10 @@ async def _notify_manager(order, items, data):
 
     if not MANAGER_CHAT_ID:
         logger.warning("MANAGER_CHAT_ID not set, skipping notification")
+        return
+
+    if not TELEGRAM_BOT_TOKEN:
+        logger.warning("TELEGRAM_BOT_TOKEN not set, skipping notification")
         return
 
     lines = [
@@ -347,5 +376,6 @@ async def _notify_manager(order, items, data):
     bot = Bot(token=TELEGRAM_BOT_TOKEN)
     try:
         await bot.send_message(MANAGER_CHAT_ID, "\n".join(lines))
+        logger.info("Order #%d notification sent to chat %s", order.id, MANAGER_CHAT_ID)
     finally:
         await bot.session.close()
