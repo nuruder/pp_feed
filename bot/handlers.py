@@ -33,8 +33,6 @@ def _format_card(product: Product, snapshot: PriceSnapshot | None) -> str:
             lines.append(f"\U0001f3f7 Обычная цена: \u20ac{snapshot.price_original:.2f}")
         if snapshot.price_regular:
             lines.append(f"\U0001f4b0 Со скидкой: \u20ac{snapshot.price_regular:.2f}")
-        if snapshot.price_wholesale:
-            lines.append(f"\U0001f3ea Оптовая: \u20ac{snapshot.price_wholesale:.2f}")
     qty = product.stock_quantity or 0
     status = f"{qty} шт." if product.in_stock else "Нет в наличии"
     lines.append(f"\U0001f4ca На складе: {status}")
@@ -139,6 +137,7 @@ async def handle_search(message: Message):
             select(Product)
             .options(selectinload(Product.brand))
             .where(Product.name.ilike(f"%{query}%"))
+            .where(Product.in_stock.is_(True))
             .order_by(Product.name)
             .limit(5)
         )
