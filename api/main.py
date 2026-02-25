@@ -8,12 +8,14 @@ Docs:
     http://localhost:8000/docs
 """
 
+import hashlib
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select, func, desc
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -59,7 +61,29 @@ app.include_router(webapp_router, prefix="/api/v1")
 # Serve Web App frontend
 _webapp_dir = Path(__file__).resolve().parent.parent / "webapp"
 if _webapp_dir.is_dir():
-    app.mount("/app", StaticFiles(directory=str(_webapp_dir), html=True), name="webapp")
+
+    def _assets_hash() -> str:
+        """Short hash based on mtime of all JS/CSS files — changes on any file update."""
+        h = hashlib.md5()
+        for pattern in ("js/*.js", "css/*.css"):
+            for f in sorted(_webapp_dir.glob(pattern)):
+                h.update(str(f.stat().st_mtime).encode())
+        return h.hexdigest()[:8]
+
+    @app.get("/app", response_class=HTMLResponse)
+    @app.get("/app/", response_class=HTMLResponse)
+    @app.get("/app/index.html", response_class=HTMLResponse)
+    async def webapp_index():
+        """Serve index.html with cache-busting version parameter."""
+        import re
+        v = _assets_hash()
+        html = (_webapp_dir / "index.html").read_text()
+        # Only add ?v= to local assets (href="css/..." and src="js/...")
+        html = re.sub(r'href="(css/[^"]+)"', rf'href="\1?v={v}"', html)
+        html = re.sub(r'src="(js/[^"]+)"', rf'src="\1?v={v}"', html)
+        return HTMLResponse(html)
+
+    app.mount("/app", StaticFiles(directory=str(_webapp_dir)), name="webapp")
 
 
 @app.get("/api/v1/stats", response_model=StatsSchema, tags=["Stats"])
