@@ -39,4 +39,4 @@ API_HOST = os.getenv("API_HOST", "0.0.0.0")
 API_PORT = int(os.getenv("API_PORT", "8000"))
 
 # Schedule: hours in 24h format
-SCHEDULE_HOURS = [8, 20]  # 08:00 and 20:00
+SCHEDULE_HOURS = [1]  # 01:00
