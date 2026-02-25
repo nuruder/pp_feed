@@ -218,6 +218,88 @@ async def extract_product_details(page: Page) -> dict:
         except Exception:
             pass
 
+    # --- Gallery images ---
+    try:
+        gallery_images = await page.evaluate("""
+            () => {
+                const urls = new Set();
+
+                // 1. Dedicated gallery/carousel selectors (OpenCart, common themes)
+                const gallerySelectors = [
+                    '.product-image a[href]',
+                    '.product-gallery a[href]',
+                    '.thumbnails a[href]',
+                    '.image-additional a[href]',
+                    '.product-images a[href]',
+                    '.swiper-slide a[href]',
+                    '.product-thumb-list a[href]',
+                    '.fotorama a[href], .fotorama img[src]',
+                    '.owl-carousel .item a[href]',
+                    '.product-thumbs a[href]',
+                    '#image-gallery a[href]',
+                ];
+                for (const sel of gallerySelectors) {
+                    document.querySelectorAll(sel).forEach(el => {
+                        const href = el.href || el.getAttribute('href') || '';
+                        if (href && !href.startsWith('data:') && !href.startsWith('javascript:')
+                            && (href.includes('.jpg') || href.includes('.jpeg') || href.includes('.png')
+                                || href.includes('.webp') || href.includes('/image/'))) {
+                            urls.add(href);
+                        }
+                    });
+                }
+
+                // 2. Thumbnail images if no links found
+                if (urls.size === 0) {
+                    const thumbSelectors = [
+                        '.product-image img',
+                        '.product-gallery img',
+                        '.thumbnails img',
+                        '.image-additional img',
+                        '.product-images img',
+                    ];
+                    for (const sel of thumbSelectors) {
+                        document.querySelectorAll(sel).forEach(img => {
+                            const src = img.getAttribute('data-zoom-image')
+                                || img.getAttribute('data-large')
+                                || img.getAttribute('data-src')
+                                || img.src || '';
+                            if (src && !src.startsWith('data:')) {
+                                urls.add(src);
+                            }
+                        });
+                    }
+                }
+
+                // 3. Main product image (always include)
+                const mainSelectors = [
+                    '.product-image > a > img',
+                    '#product-image',
+                    '.main-image img',
+                    '[itemprop="image"]',
+                ];
+                for (const sel of mainSelectors) {
+                    const el = document.querySelector(sel);
+                    if (el) {
+                        const src = el.getAttribute('data-zoom-image')
+                            || el.closest('a')?.href
+                            || el.getAttribute('data-large')
+                            || el.src || '';
+                        if (src && !src.startsWith('data:')) {
+                            urls.add(src);
+                        }
+                    }
+                }
+
+                return [...urls];
+            }
+        """)
+        if gallery_images:
+            details["images"] = gallery_images
+            logger.debug("Found %d gallery images", len(gallery_images))
+    except Exception as e:
+        logger.debug("Gallery extraction error: %s", e)
+
     # --- Sizes/Options ---
     # Extract all options from the page via JS (handles dynamically rendered elements)
     try:
@@ -377,6 +459,10 @@ async def save_product_details(external_id: str, details: dict):
             # Update description if we got one
             if details.get("description"):
                 product.description = details["description"]
+
+            # Update gallery images
+            if details.get("images"):
+                product.images = details["images"]
 
             # Update product type from datalayer category
             if details.get("category"):

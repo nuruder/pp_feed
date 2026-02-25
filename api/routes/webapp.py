@@ -293,6 +293,7 @@ async def webapp_product_detail(
         id=product.id,
         name=product.name,
         image_url=product.image_url,
+        images=product.images or [],
         description=product.description,
         price=_customer_price(snap.price_regular, snap.price_wholesale),
         price_old=snap.price_regular,

@@ -36,18 +36,28 @@ async def reset_db():
         await conn.run_sync(Base.metadata.create_all)
 
 
-async def migrate_indexes():
-    """Create indexes if they don't exist (safe to run on existing DB)."""
-    indexes = [
-        ("ix_products_brand_id", "products", "brand_id"),
-        ("ix_products_in_stock", "products", "in_stock"),
-        ("ix_product_sizes_product_instock", "product_sizes", "product_id, in_stock"),
-        ("ix_price_snapshots_product_ts", "price_snapshots", "product_id, timestamp DESC"),
-    ]
+async def migrate():
+    """Apply schema migrations (safe to re-run)."""
     async with engine.begin() as conn:
+        # Indexes
+        indexes = [
+            ("ix_products_brand_id", "products", "brand_id"),
+            ("ix_products_in_stock", "products", "in_stock"),
+            ("ix_product_sizes_product_instock", "product_sizes", "product_id, in_stock"),
+            ("ix_price_snapshots_product_ts", "price_snapshots", "product_id, timestamp DESC"),
+        ]
         for name, table, columns in indexes:
             await conn.execute(text(
                 f"CREATE INDEX IF NOT EXISTS {name} ON {table} ({columns})"
+            ))
+
+        # New columns
+        columns = [
+            ("products", "images", "JSONB"),
+        ]
+        for table, column, col_type in columns:
+            await conn.execute(text(
+                f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {col_type}"
             ))
 
 

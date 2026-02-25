@@ -75,9 +75,9 @@ def main():
         asyncio.run(start_bot())
 
     elif command == "migrate":
-        from db.database import migrate_indexes
-        asyncio.run(migrate_indexes())
-        print("Indexes created.")
+        from db.database import migrate
+        asyncio.run(migrate())
+        print("Migration complete.")
 
     elif command == "reset":
         confirm = input("This will DELETE all data and recreate tables. Type 'yes' to confirm: ")

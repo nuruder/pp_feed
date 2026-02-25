@@ -1,7 +1,7 @@
 from datetime import datetime
 from sqlalchemy import (
     Column, Integer, String, Float, Text, Boolean,
-    ForeignKey, DateTime, UniqueConstraint, Index, Table,
+    ForeignKey, DateTime, UniqueConstraint, Index, Table, JSON,
 )
 from sqlalchemy.orm import DeclarativeBase, relationship
 
@@ -61,6 +61,7 @@ class Product(Base):
     name = Column(String(512), nullable=False)
     url = Column(String(512), nullable=False)
     image_url = Column(String(512), nullable=True)
+    images = Column(JSON, nullable=True)  # list of gallery image URLs
     description = Column(Text, nullable=True)
     brand_id = Column(Integer, ForeignKey("brands.id"), nullable=True, index=True)
     product_type_id = Column(Integer, ForeignKey("product_types.id"), nullable=True)

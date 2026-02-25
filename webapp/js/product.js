@@ -2,6 +2,8 @@ const ProductPage = {
     product: null,
     selectedSize: null,
     quantity: 1,
+    currentSlide: 0,
+    touchStartX: 0,
 
     async render(productId) {
         const content = document.getElementById('content');
@@ -11,19 +13,102 @@ const ProductPage = {
             this.product = await API.getProduct(productId);
             this.selectedSize = null;
             this.quantity = 1;
+            this.currentSlide = 0;
             this.draw();
         } catch (e) {
             content.innerHTML = '<div class="empty-state">Товар не найден</div>';
         }
     },
 
+    _getGalleryImages() {
+        const p = this.product;
+        const imgs = (p.images && p.images.length > 0) ? [...p.images] : [];
+        // Ensure main image is first if not already in the list
+        if (p.image_url) {
+            if (!imgs.includes(p.image_url)) {
+                imgs.unshift(p.image_url);
+            } else if (imgs.indexOf(p.image_url) !== 0) {
+                imgs.splice(imgs.indexOf(p.image_url), 1);
+                imgs.unshift(p.image_url);
+            }
+        }
+        return imgs;
+    },
+
+    _renderGallery() {
+        const images = this._getGalleryImages();
+
+        if (images.length === 0) {
+            return '<div class="img-placeholder" style="aspect-ratio:1;border-radius:12px;margin-bottom:12px">?</div>';
+        }
+
+        if (images.length === 1) {
+            return `<img src="${images[0]}" alt="${this.product.name}">`;
+        }
+
+        // Multi-image gallery
+        let html = '<div class="gallery" id="product-gallery">';
+        html += '<div class="gallery-track" id="gallery-track">';
+        images.forEach((url, i) => {
+            html += `<img src="${url}" alt="" class="gallery-slide" loading="${i === 0 ? 'eager' : 'lazy'}">`;
+        });
+        html += '</div>';
+
+        // Dots
+        html += '<div class="gallery-dots">';
+        images.forEach((_, i) => {
+            html += `<span class="gallery-dot${i === this.currentSlide ? ' active' : ''}" onclick="ProductPage.goToSlide(${i})"></span>`;
+        });
+        html += '</div>';
+
+        // Arrows
+        html += `<button class="gallery-arrow gallery-arrow-left" onclick="ProductPage.prevSlide()">&#8249;</button>`;
+        html += `<button class="gallery-arrow gallery-arrow-right" onclick="ProductPage.nextSlide()">&#8250;</button>`;
+        html += '</div>';
+
+        return html;
+    },
+
+    goToSlide(idx) {
+        const images = this._getGalleryImages();
+        if (idx < 0) idx = images.length - 1;
+        if (idx >= images.length) idx = 0;
+        this.currentSlide = idx;
+
+        const track = document.getElementById('gallery-track');
+        if (track) track.style.transform = `translateX(-${idx * 100}%)`;
+
+        // Update dots
+        document.querySelectorAll('.gallery-dot').forEach((dot, i) => {
+            dot.classList.toggle('active', i === idx);
+        });
+    },
+
+    prevSlide() { this.goToSlide(this.currentSlide - 1); },
+    nextSlide() { this.goToSlide(this.currentSlide + 1); },
+
+    initGalleryTouch() {
+        const gallery = document.getElementById('product-gallery');
+        if (!gallery) return;
+
+        gallery.addEventListener('touchstart', (e) => {
+            this.touchStartX = e.touches[0].clientX;
+        }, { passive: true });
+
+        gallery.addEventListener('touchend', (e) => {
+            const diff = this.touchStartX - e.changedTouches[0].clientX;
+            if (Math.abs(diff) > 40) {
+                if (diff > 0) this.nextSlide();
+                else this.prevSlide();
+            }
+        }, { passive: true });
+    },
+
     draw() {
         const p = this.product;
         const content = document.getElementById('content');
 
-        const imgHtml = p.image_url
-            ? `<img src="${p.image_url}" alt="${p.name}">`
-            : '<div class="img-placeholder" style="aspect-ratio:1;border-radius:12px;margin-bottom:12px">?</div>';
+        const galleryHtml = this._renderGallery();
 
         const stockClass = p.in_stock ? 'stock-in' : 'stock-out';
         const stockText = p.in_stock ? `В наличии (${p.stock_quantity} шт.)` : 'Нет в наличии';
@@ -66,7 +151,7 @@ const ProductPage = {
 
         content.innerHTML = `
             <div class="product-detail">
-                ${imgHtml}
+                ${galleryHtml}
                 <div class="product-detail-name">${p.name}</div>
                 <div class="product-detail-prices">
                     <span class="price-current">&euro;${p.price.toFixed(2)}</span>
@@ -86,6 +171,8 @@ const ProductPage = {
                 ${descHtml}
             </div>
         `;
+
+        this.initGalleryTouch();
     },
 
     selectSize(label) {

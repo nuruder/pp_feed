@@ -175,6 +175,7 @@ class WebAppProductDetail(BaseModel):
     id: int
     name: str
     image_url: str | None = None
+    images: list[str] = []
     description: str | None = None
     price: float
     price_old: float
