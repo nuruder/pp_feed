@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload
 
 from db.database import get_db
 from db.models import (
-    Product, PriceSnapshot, Category, ProductSize,
+    Product, PriceSnapshot, Category, ProductSize, Brand,
     TgUser, Order, OrderItem, product_categories,
 )
 from api.schemas import (
@@ -122,18 +122,90 @@ async def webapp_categories(db: AsyncSession = Depends(get_db)):
     ]
 
 
+# ---------- Filters ----------
+
+@router.get("/filters")
+async def webapp_filters(
+    category_id: int | None = None,
+    search: str | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get available brands and sizes for marginal products (for filter UI)."""
+    marginal = _marginal_subquery()
+
+    # Base: marginal in-stock products with customer price
+    base = (
+        select(
+            Product.id,
+            Product.brand_id,
+            ((marginal.c.price_wholesale + marginal.c.price_regular) / 2).label("customer_price"),
+        )
+        .join(marginal, marginal.c.product_id == Product.id)
+        .where(Product.in_stock.is_(True))
+    )
+    if category_id is not None:
+        base = base.join(product_categories).where(
+            product_categories.c.category_id == category_id
+        )
+    if search:
+        base = base.where(Product.name.ilike(f"%{search}%"))
+
+    base_sub = base.subquery()
+
+    # Brands
+    brand_q = (
+        select(Brand.id, Brand.name, func.count(base_sub.c.id).label("cnt"))
+        .join(base_sub, base_sub.c.brand_id == Brand.id)
+        .group_by(Brand.id, Brand.name)
+        .order_by(Brand.name)
+    )
+    brand_rows = (await db.execute(brand_q)).all()
+
+    # Sizes (distinct size_label for matching products, in-stock only)
+    size_q = (
+        select(ProductSize.size_label, func.count(func.distinct(ProductSize.product_id)).label("cnt"))
+        .join(base_sub, base_sub.c.id == ProductSize.product_id)
+        .where(ProductSize.in_stock.is_(True))
+        .group_by(ProductSize.size_label)
+        .order_by(ProductSize.size_label)
+    )
+    size_rows = (await db.execute(size_q)).all()
+
+    # Price range (customer price = midpoint)
+    price_q = select(
+        func.min(base_sub.c.customer_price).label("price_min"),
+        func.max(base_sub.c.customer_price).label("price_max"),
+    )
+    price_row = (await db.execute(price_q)).one()
+    price_min = round(price_row.price_min, 2) if price_row.price_min else None
+    price_max = round(price_row.price_max, 2) if price_row.price_max else None
+
+    return {
+        "brands": [{"id": r.id, "name": r.name, "count": r.cnt} for r in brand_rows],
+        "sizes": [{"label": r.size_label, "count": r.cnt} for r in size_rows],
+        "price_min": price_min,
+        "price_max": price_max,
+    }
+
+
 # ---------- Products ----------
 
 @router.get("/products", response_model=dict)
 async def webapp_products(
     category_id: int | None = None,
     search: str | None = None,
+    brand_id: int | None = None,
+    size: str | None = None,
+    price_min: float | None = None,
+    price_max: float | None = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=50),
     db: AsyncSession = Depends(get_db),
 ):
     """Get marginal products for the catalog (single SQL query)."""
     marginal = _marginal_subquery()
+
+    customer_price_expr = (marginal.c.price_wholesale + marginal.c.price_regular) / 2
 
     query = (
         select(
@@ -154,6 +226,20 @@ async def webapp_products(
         )
     if search:
         query = query.where(Product.name.ilike(f"%{search}%"))
+    if brand_id is not None:
+        query = query.where(Product.brand_id == brand_id)
+    if size:
+        query = query.where(
+            Product.id.in_(
+                select(ProductSize.product_id)
+                .where(ProductSize.size_label == size)
+                .where(ProductSize.in_stock.is_(True))
+            )
+        )
+    if price_min is not None:
+        query = query.where(customer_price_expr >= price_min)
+    if price_max is not None:
+        query = query.where(customer_price_expr <= price_max)
 
     # Total count
     count_q = select(func.count()).select_from(query.subquery())

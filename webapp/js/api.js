@@ -31,6 +31,10 @@ const API = {
         return this.get('/categories');
     },
 
+    getFilters(params) {
+        return this.get('/filters', params);
+    },
+
     getProducts(params) {
         return this.get('/products', params);
     },
