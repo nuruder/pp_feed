@@ -6,3 +6,4 @@ data/
 *.xlsx
 .venv/
 venv/
+categories.txt
