@@ -136,19 +136,6 @@ const ProductPage = {
         const needsSize = hasSizes && availableSizes.length > 0;
         const canAdd = p.in_stock && (!needsSize || this.selectedSize);
 
-        // Description (truncated)
-        let descHtml = '';
-        if (p.description) {
-            // Strip HTML tags for clean display
-            const div = document.createElement('div');
-            div.innerHTML = p.description;
-            const text = div.textContent || div.innerText || '';
-            if (text.trim()) {
-                const short = text.trim().substring(0, 300);
-                descHtml = `<div class="product-description">${short}${text.length > 300 ? '...' : ''}</div>`;
-            }
-        }
-
         content.innerHTML = `
             <div class="product-detail">
                 ${galleryHtml}
@@ -168,7 +155,6 @@ const ProductPage = {
                     onclick="ProductPage.addToCart()">
                     ${!p.in_stock ? 'Нет в наличии' : (needsSize && !this.selectedSize ? 'Выберите размер' : 'В корзину')}
                 </button>
-                ${descHtml}
             </div>
         `;
 
