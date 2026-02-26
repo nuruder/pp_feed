@@ -194,6 +194,21 @@ def _detect_shoe_type(category_name: str | None) -> str | None:
     return None
 
 
+def _normalize_size(size_label: str) -> str:
+    """Convert fraction sizes to decimal: '40 2/3' → '40.5', '41 1/3' → '41.5'."""
+    import re
+    m = re.match(r'^(\d+)\s+(\d+)/(\d+)$', size_label)
+    if m:
+        whole = int(m.group(1))
+        frac = int(m.group(2)) / int(m.group(3))
+        # Round to nearest 0.5
+        value = round((whole + frac) * 2) / 2
+        if value == int(value):
+            return str(int(value))
+        return str(value)
+    return size_label
+
+
 def get_size_cm(brand: str, category_names: list[str], size_label: str) -> float | None:
     """Look up cm for a shoe size.
 
@@ -209,7 +224,7 @@ def get_size_cm(brand: str, category_names: list[str], size_label: str) -> float
         return None
 
     brand_key = brand.lower().replace("-", "").replace(" ", "")
-    size_key = size_label.strip()
+    size_key = _normalize_size(size_label.strip())
 
     # Detect shoe type from category names
     shoe_type = None
