@@ -24,7 +24,7 @@ const OrderPage = {
             </div>
             <div class="cart-total">
                 <span>Итого:</span>
-                <span>${total.toFixed(2)}&euro;</span>
+                <span>${total.toFixed(2).replace('.', ',')}&euro;</span>
             </div>
             <button class="btn-primary" id="btn-submit-order" onclick="OrderPage.submit()">
                 Подтвердить заказ
@@ -87,7 +87,7 @@ const OrderPage = {
             <div class="order-success">
                 <div class="order-success-icon">&#10003;</div>
                 <h2>Заказ оформлен!</h2>
-                <p>Заказ #${order.id} на сумму ${order.total.toFixed(2)}&euro;</p>
+                <p>Заказ #${order.id} на сумму ${order.total.toFixed(2).replace('.', ',')}&euro;</p>
                 <p>Менеджер свяжется с вами в ближайшее время.</p>
                 <br>
                 <button class="btn-primary" onclick="App.navigate('categories')">Вернуться в каталог</button>

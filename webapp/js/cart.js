@@ -84,7 +84,7 @@ const Cart = {
                     <div class="cart-item-info">
                         <div class="cart-item-name">${item.name}</div>
                         <div class="cart-item-meta">${item.quantity} шт.${sizeText}</div>
-                        <div class="cart-item-price">${(item.price * item.quantity).toFixed(2)}&euro;</div>
+                        <div class="cart-item-price">${(item.price * item.quantity).toFixed(2).replace('.', ',')}&euro;</div>
                     </div>
                     <button class="cart-item-remove" onclick="Cart.removeAndRefresh(${index})">&times;</button>
                 </div>
@@ -95,7 +95,7 @@ const Cart = {
         html += `
             <div class="cart-total">
                 <span>Итого:</span>
-                <span>${total.toFixed(2)}&euro;</span>
+                <span>${total.toFixed(2).replace('.', ',')}&euro;</span>
             </div>
             <button class="btn-primary" onclick="App.navigate('checkout')">Оформить заказ</button>
         `;
