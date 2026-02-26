@@ -20,8 +20,22 @@ logger = logging.getLogger("pp_parser.webapp")
 router = APIRouter(prefix="/webapp", tags=["Web App"])
 
 # --- Margin filter constants ---
-MIN_MARGIN_EUR = 5.0
-MIN_MARGIN_PCT = 0.10
+DEFAULT_MARGIN_EUR = 5.0
+DEFAULT_MARGIN_PCT = 0.10
+
+# Per-category overrides (category name substring → thresholds)
+CATEGORY_MARGINS = {
+    "Accessories": (1.0, 0.05),
+}
+
+
+def _get_margins(category_name: str | None = None) -> tuple[float, float]:
+    """Get (margin_eur, margin_pct) for a category."""
+    if category_name:
+        for key, margins in CATEGORY_MARGINS.items():
+            if key.lower() in category_name.lower():
+                return margins
+    return (DEFAULT_MARGIN_EUR, DEFAULT_MARGIN_PCT)
 
 
 def _customer_price(price_regular: float, price_wholesale: float) -> float:
@@ -29,21 +43,18 @@ def _customer_price(price_regular: float, price_wholesale: float) -> float:
     return round((price_wholesale + price_regular) / 2, 2)
 
 
-def _has_margin(price_regular: float | None, price_wholesale: float | None) -> bool:
+def _has_margin(price_regular: float | None, price_wholesale: float | None,
+                category_name: str | None = None) -> bool:
     """Check if product has enough margin to be listed."""
     if not price_regular or not price_wholesale:
         return False
+    margin_eur, margin_pct = _get_margins(category_name)
     diff = price_regular - price_wholesale
-    return diff >= MIN_MARGIN_EUR or diff / price_regular >= MIN_MARGIN_PCT
+    return diff >= margin_eur or diff / price_regular >= margin_pct
 
 
-def _marginal_subquery():
-    """
-    Subquery returning (product_id, price_regular, price_wholesale)
-    for products whose latest snapshot passes the margin filter.
-    Single SQL instead of N+1 queries.
-    """
-    # Step 1: rank snapshots per product by timestamp (newest first)
+def _latest_prices_subquery():
+    """Subquery: latest snapshot per product (no margin filter)."""
     ranked = (
         select(
             PriceSnapshot.product_id,
@@ -58,23 +69,40 @@ def _marginal_subquery():
         .where(PriceSnapshot.price_wholesale.isnot(None))
         .subquery()
     )
-
-    # Step 2: keep only latest (rn=1) + margin filter
-    marginal = (
+    latest = (
         select(
             ranked.c.product_id,
             ranked.c.price_regular,
             ranked.c.price_wholesale,
         )
         .where(ranked.c.rn == 1)
-        .where(or_(
-            (ranked.c.price_regular - ranked.c.price_wholesale) >= MIN_MARGIN_EUR,
-            (ranked.c.price_regular - ranked.c.price_wholesale)
-            / ranked.c.price_regular >= MIN_MARGIN_PCT,
-        ))
         .subquery()
     )
+    return latest
 
+
+def _margin_condition(sub, margin_eur: float, margin_pct: float):
+    """SQL OR condition for margin filter on a subquery with price columns."""
+    return or_(
+        (sub.c.price_regular - sub.c.price_wholesale) >= margin_eur,
+        (sub.c.price_regular - sub.c.price_wholesale)
+        / sub.c.price_regular >= margin_pct,
+    )
+
+
+def _marginal_subquery(category_name: str | None = None):
+    """Subquery with margin filter. Thresholds depend on category."""
+    latest = _latest_prices_subquery()
+    margin_eur, margin_pct = _get_margins(category_name)
+    marginal = (
+        select(
+            latest.c.product_id,
+            latest.c.price_regular,
+            latest.c.price_wholesale,
+        )
+        .where(_margin_condition(latest, margin_eur, margin_pct))
+        .subquery()
+    )
     return marginal
 
 
@@ -92,32 +120,35 @@ async def _get_latest_snapshot(db: AsyncSession, product_id: int) -> PriceSnapsh
 
 @router.get("/categories", response_model=list[WebAppCategory])
 async def webapp_categories(db: AsyncSession = Depends(get_db)):
-    """Get categories that have marginal products (single SQL query)."""
-    marginal = _marginal_subquery()
+    """Get categories that have marginal products, with per-category margin thresholds."""
+    latest = _latest_prices_subquery()
 
-    query = (
-        select(
-            Category.id,
-            Category.name,
-            func.count(marginal.c.product_id).label("cnt"),
-        )
-        .join(product_categories, product_categories.c.category_id == Category.id)
-        .join(Product, Product.id == product_categories.c.product_id)
-        .join(marginal, marginal.c.product_id == Product.id)
-        .where(Category.level == 0)
-        .where(Product.in_stock.is_(True))
-        .group_by(Category.id, Category.name)
-        .having(func.count(marginal.c.product_id) > 0)
-        .order_by(Category.name)
+    # Get all top-level categories
+    cat_result = await db.execute(
+        select(Category.id, Category.name).where(Category.level == 0).order_by(Category.name)
     )
+    cat_rows = cat_result.all()
 
-    result = await db.execute(query)
-    rows = result.all()
+    categories = []
+    for cat_row in cat_rows:
+        margin_eur, margin_pct = _get_margins(cat_row.name)
+        marginal = (
+            select(latest.c.product_id)
+            .where(_margin_condition(latest, margin_eur, margin_pct))
+            .subquery()
+        )
+        count_q = (
+            select(func.count(Product.id))
+            .join(product_categories, product_categories.c.product_id == Product.id)
+            .join(marginal, marginal.c.product_id == Product.id)
+            .where(product_categories.c.category_id == cat_row.id)
+            .where(Product.in_stock.is_(True))
+        )
+        cnt = await db.scalar(count_q) or 0
+        if cnt > 0:
+            categories.append(WebAppCategory(id=cat_row.id, name=cat_row.name, products_count=cnt))
 
-    return [
-        WebAppCategory(id=row.id, name=row.name, products_count=row.cnt)
-        for row in rows
-    ]
+    return categories
 
 
 # ---------- Filters ----------
@@ -129,7 +160,12 @@ async def webapp_filters(
     db: AsyncSession = Depends(get_db),
 ):
     """Get available brands and sizes for marginal products (for filter UI)."""
-    marginal = _marginal_subquery()
+    # Resolve category name for per-category margin thresholds
+    cat_name = None
+    if category_id is not None:
+        row = (await db.execute(select(Category.name).where(Category.id == category_id))).scalar_one_or_none()
+        cat_name = row
+    marginal = _marginal_subquery(cat_name)
 
     # Base: marginal in-stock products with customer price
     base = (
@@ -201,7 +237,12 @@ async def webapp_products(
     db: AsyncSession = Depends(get_db),
 ):
     """Get marginal products for the catalog (single SQL query)."""
-    marginal = _marginal_subquery()
+    # Resolve category name for per-category margin thresholds
+    cat_name = None
+    if category_id is not None:
+        row = (await db.execute(select(Category.name).where(Category.id == category_id))).scalar_one_or_none()
+        cat_name = row
+    marginal = _marginal_subquery(cat_name)
 
     customer_price_expr = (marginal.c.price_wholesale + marginal.c.price_regular) / 2
 
@@ -277,14 +318,17 @@ async def webapp_product_detail(
     result = await db.execute(
         select(Product)
         .where(Product.id == product_id)
-        .options(selectinload(Product.sizes))
+        .options(selectinload(Product.sizes), selectinload(Product.categories))
     )
     product = result.scalar_one_or_none()
     if not product:
         raise HTTPException(404, "Product not found")
 
     snap = await _get_latest_snapshot(db, product.id)
-    if not snap or not _has_margin(snap.price_regular, snap.price_wholesale):
+    # Use the most lenient margin from any of the product's categories
+    cat_names = [c.name for c in product.categories] if product.categories else [None]
+    has_margin = any(_has_margin(snap.price_regular, snap.price_wholesale, cn) for cn in cat_names) if snap else False
+    if not snap or not has_margin:
         raise HTTPException(404, "Product not available")
 
     return WebAppProductDetail(
