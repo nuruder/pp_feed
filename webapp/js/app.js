@@ -14,6 +14,13 @@ const App = {
     },
 
     navigate(page, params = {}) {
+        // Save catalog page number before navigating away
+        if (this.history.length > 0) {
+            const prev = this.history[this.history.length - 1];
+            if (prev.page === 'products') {
+                prev.params._restorePage = Catalog.currentPage;
+            }
+        }
         this.history.push({ page, params });
         this.renderPage(page, params);
     },
@@ -53,7 +60,10 @@ const App = {
                 title.textContent = params.categoryName || 'Товары';
                 searchBar.style.display = 'block';
                 Catalog.currentCategory = params.categoryId;
-                Catalog.renderProducts(params.categoryId, params.categoryName);
+                if (params._restorePage) {
+                    Catalog.currentPage = params._restorePage;
+                }
+                Catalog.renderProducts(params.categoryId, params.categoryName, Catalog.currentPage);
                 break;
 
             case 'product':
