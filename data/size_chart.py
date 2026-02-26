@@ -195,18 +195,20 @@ def _detect_shoe_type(category_name: str | None) -> str | None:
 
 
 def _normalize_size(size_label: str) -> str:
-    """Convert fraction sizes to decimal: '40 2/3' → '40.5', '41 1/3' → '41.5'."""
+    """Normalize size label: '43,5' → '43.5', '40 2/3' → '40.5'."""
     import re
-    m = re.match(r'^(\d+)\s+(\d+)/(\d+)$', size_label)
+    # Comma → dot
+    s = size_label.replace(",", ".")
+    # Fraction notation: '40 2/3' → '40.5'
+    m = re.match(r'^(\d+)\s+(\d+)/(\d+)$', s)
     if m:
         whole = int(m.group(1))
         frac = int(m.group(2)) / int(m.group(3))
-        # Round to nearest 0.5
         value = round((whole + frac) * 2) / 2
         if value == int(value):
             return str(int(value))
         return str(value)
-    return size_label
+    return s
 
 
 def get_size_cm(brand: str, category_names: list[str], size_label: str) -> float | None:
