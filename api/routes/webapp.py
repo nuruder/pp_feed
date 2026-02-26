@@ -2,7 +2,7 @@ import logging
 import math
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, func, desc
+from sqlalchemy import select, func, desc, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -21,7 +21,7 @@ router = APIRouter(prefix="/webapp", tags=["Web App"])
 
 # --- Margin filter constants ---
 MIN_MARGIN_EUR = 5.0
-MIN_MARGIN_PCT = 0.05
+MIN_MARGIN_PCT = 0.10
 
 
 def _customer_price(price_regular: float, price_wholesale: float) -> float:
@@ -34,7 +34,7 @@ def _has_margin(price_regular: float | None, price_wholesale: float | None) -> b
     if not price_regular or not price_wholesale:
         return False
     diff = price_regular - price_wholesale
-    return diff >= MIN_MARGIN_EUR and diff / price_regular >= MIN_MARGIN_PCT
+    return diff >= MIN_MARGIN_EUR or diff / price_regular >= MIN_MARGIN_PCT
 
 
 def _marginal_subquery():
@@ -67,13 +67,11 @@ def _marginal_subquery():
             ranked.c.price_wholesale,
         )
         .where(ranked.c.rn == 1)
-        .where(
-            (ranked.c.price_regular - ranked.c.price_wholesale) >= MIN_MARGIN_EUR
-        )
-        .where(
+        .where(or_(
+            (ranked.c.price_regular - ranked.c.price_wholesale) >= MIN_MARGIN_EUR,
             (ranked.c.price_regular - ranked.c.price_wholesale)
-            / ranked.c.price_regular >= MIN_MARGIN_PCT
-        )
+            / ranked.c.price_regular >= MIN_MARGIN_PCT,
+        ))
         .subquery()
     )
 
