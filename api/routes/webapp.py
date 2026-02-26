@@ -325,6 +325,7 @@ async def webapp_product_detail(
             selectinload(Product.sizes),
             selectinload(Product.categories),
             selectinload(Product.brand),
+            selectinload(Product.product_type),
         )
     )
     product = result.scalar_one_or_none()
@@ -338,9 +339,12 @@ async def webapp_product_detail(
     if not snap or not has_margin:
         raise HTTPException(404, "Product not available")
 
-    # Size chart: EU → cm lookup
+    # Size chart: EU → cm lookup (use product_type name for gender detection)
     from data.size_chart import get_size_cm
     brand_name = product.brand.name if product.brand else None
+    size_cat_names = list(cat_names)
+    if product.product_type and product.product_type.name:
+        size_cat_names.append(product.product_type.name)
 
     return WebAppProductDetail(
         id=product.id,
@@ -357,7 +361,7 @@ async def webapp_product_detail(
                 size_label=s.size_label,
                 in_stock=s.in_stock,
                 quantity=s.quantity,
-                size_cm=get_size_cm(brand_name, cat_names, s.size_label) if brand_name else None,
+                size_cm=get_size_cm(brand_name, size_cat_names, s.size_label) if brand_name else None,
             )
             for s in product.sizes
         ],
