@@ -143,8 +143,8 @@ const ProductPage = {
                 ${galleryHtml}
                 <div class="product-detail-name">${p.name}</div>
                 <div class="product-detail-prices">
-                    <span class="price-current">&euro;${p.price.toFixed(2)}</span>
-                    <span class="price-old">&euro;${p.price_old.toFixed(2)}</span>
+                    <span class="price-current">${p.price.toFixed(2)}&euro;</span>
+                    <span class="price-old">${p.price_old.toFixed(2)}&euro;</span>
                 </div>
                 <div class="product-detail-stock ${stockClass}">${stockText}</div>
                 ${sizesHtml}

@@ -205,8 +205,8 @@ const Catalog = {
                         <div class="product-card-info">
                             <div class="product-card-name">${p.name}</div>
                             <div class="product-card-prices">
-                                <span class="price-current">&euro;${p.price.toFixed(2)}</span>
-                                <span class="price-old">&euro;${p.price_old.toFixed(2)}</span>
+                                <span class="price-current">${p.price.toFixed(2)}&euro;</span>
+                                <span class="price-old">${p.price_old.toFixed(2)}&euro;</span>
                             </div>
                         </div>
                     </div>
