@@ -111,7 +111,7 @@ const ProductPage = {
         const galleryHtml = this._renderGallery();
 
         const stockClass = p.in_stock ? 'stock-in' : 'stock-out';
-        const stockText = p.in_stock ? `В наличии (${p.stock_quantity < 5 ? 'мало' : 'много'})` : 'Нет в наличии';
+        const stockText = p.in_stock ? (p.stock_quantity < 5 ? 'В наличии (мало)' : 'В наличии') : 'Нет в наличии';
 
         // Sizes
         const availableSizes = (p.sizes || []).filter(s => s.in_stock);
@@ -122,7 +122,8 @@ const ProductPage = {
             sizesHtml = '<div class="sizes-section">';
             sizesHtml += '<div class="sizes-label">Размер:</div>';
             sizesHtml += '<div class="sizes-grid">';
-            p.sizes.forEach(s => {
+            const sorted = [...p.sizes].sort((a, b) => parseFloat(a.size_label) - parseFloat(b.size_label));
+            sorted.forEach(s => {
                 const disabled = !s.in_stock;
                 const selected = this.selectedSize === s.size_label;
                 const cls = disabled ? 'size-btn disabled' : (selected ? 'size-btn selected' : 'size-btn');
