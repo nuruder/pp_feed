@@ -345,10 +345,12 @@ async def webapp_product_detail(
     size_cat_names = list(cat_names)
     if product.product_type and product.product_type.name:
         size_cat_names.append(product.product_type.name)
-    logger.info("SIZE_CM debug: brand=%s, cats=%s, product_type=%s, sizes=%s",
-                brand_name, cat_names,
-                product.product_type.name if product.product_type else None,
-                [s.size_label for s in product.sizes[:3]])
+    size_results = {
+        s.size_label: get_size_cm(brand_name, size_cat_names, s.size_label) if brand_name else None
+        for s in product.sizes
+    }
+    logger.info("SIZE_CM debug: brand=%s, cats=%s, size_cat_names=%s, results=%s",
+                brand_name, cat_names, size_cat_names, size_results)
 
     return WebAppProductDetail(
         id=product.id,
@@ -365,7 +367,7 @@ async def webapp_product_detail(
                 size_label=s.size_label,
                 in_stock=s.in_stock,
                 quantity=s.quantity,
-                size_cm=get_size_cm(brand_name, size_cat_names, s.size_label) if brand_name else None,
+                size_cm=size_results.get(s.size_label),
             )
             for s in product.sizes
         ],
