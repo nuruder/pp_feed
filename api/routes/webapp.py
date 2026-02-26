@@ -107,9 +107,12 @@ def _marginal_subquery(category_name: str | None = None):
 
 
 async def _get_latest_snapshot(db: AsyncSession, product_id: int) -> PriceSnapshot | None:
+    """Get latest snapshot that has both regular and wholesale prices."""
     result = await db.execute(
         select(PriceSnapshot)
         .where(PriceSnapshot.product_id == product_id)
+        .where(PriceSnapshot.price_regular.isnot(None))
+        .where(PriceSnapshot.price_wholesale.isnot(None))
         .order_by(desc(PriceSnapshot.timestamp))
         .limit(1)
     )
