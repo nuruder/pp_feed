@@ -208,11 +208,18 @@ async def scrape_category_products(
 
     while url:
         logger.info("  Page %d: %s", page_num, url)
-        try:
-            resp = await client.get(url, follow_redirects=True)
-            resp.raise_for_status()
-        except httpx.HTTPError as e:
-            logger.error("Failed to fetch %s: %s", url, e)
+        resp = None
+        for attempt in range(1, 4):
+            try:
+                resp = await client.get(url, follow_redirects=True)
+                resp.raise_for_status()
+                break
+            except httpx.HTTPError as e:
+                logger.warning("Attempt %d/3 failed for %s: %s", attempt, url, e)
+                if attempt < 3:
+                    await asyncio.sleep(REQUEST_DELAY * attempt)
+        if resp is None or resp.status_code >= 400:
+            logger.error("Failed to fetch %s after 3 attempts", url)
             break
 
         html = resp.text
