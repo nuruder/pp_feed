@@ -202,8 +202,9 @@ async def scrape_category_products(
     all_products = []
     seen_ids = set()
 
-    # First page
-    url = category_url
+    # First page — request more products per page to reduce pagination
+    sep = "&" if "?" in category_url else "?"
+    url = f"{category_url}{sep}limit=100"
     page_num = 1
 
     while url:
