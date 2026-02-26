@@ -575,22 +575,33 @@ async def scrape_all_details(authenticated: bool = False, limit: int = 0):
     total = len(products)
     counter = {"done": 0}
 
-    async def _worker(page, chunk):
-        """Process a chunk of products sequentially on one browser tab."""
+    async def _worker(context, chunk):
+        """Process a chunk of products, creating a fresh page for each."""
         for product in chunk:
             counter["done"] += 1
             logger.info("[%d/%d] %s", counter["done"], total, product.name)
-            details = await scrape_product_detail(page, product.url, authenticated)
-            if details:
-                await save_product_details(product.external_id, details)
-                logger.info(
-                    "  Prices: reg=%s orig=%s special=%s | Stock: %s | Sizes: %d",
-                    details["prices"].get("regular"),
-                    details["prices"].get("original"),
-                    details["prices"].get("special"),
-                    details["stock"].get("quantity"),
-                    len(details.get("sizes", [])),
-                )
+            page = None
+            try:
+                page = await context.new_page()
+                details = await scrape_product_detail(page, product.url, authenticated)
+                if details:
+                    await save_product_details(product.external_id, details)
+                    logger.info(
+                        "  Prices: reg=%s orig=%s special=%s | Stock: %s | Sizes: %d",
+                        details["prices"].get("regular"),
+                        details["prices"].get("original"),
+                        details["prices"].get("special"),
+                        details["stock"].get("quantity"),
+                        len(details.get("sizes", [])),
+                    )
+            except Exception as e:
+                logger.error("Worker error for %s: %s", product.name, e)
+            finally:
+                if page:
+                    try:
+                        await page.close()
+                    except Exception:
+                        pass
             await asyncio.sleep(REQUEST_DELAY)
 
     async with async_playwright() as pw:
@@ -608,11 +619,8 @@ async def scrape_all_details(authenticated: bool = False, limit: int = 0):
         n = min(CONCURRENT_PAGES, len(products))
         chunks = [products[i::n] for i in range(n)]
 
-        # Create one tab per chunk and run workers in parallel
-        workers = []
-        for chunk in chunks:
-            page = await context.new_page()
-            workers.append(_worker(page, chunk))
+        # Run workers in parallel, each creates/closes pages per product
+        workers = [_worker(context, chunk) for chunk in chunks]
 
         await asyncio.gather(*workers)
         await browser.close()
