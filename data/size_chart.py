@@ -180,8 +180,10 @@ SIZE_CHART = {
 }
 
 
-def _detect_shoe_type(category_name: str) -> str | None:
+def _detect_shoe_type(category_name: str | None) -> str | None:
     """Detect shoe type from category name."""
+    if not category_name:
+        return None
     name = category_name.lower()
     if "junior" in name or "kid" in name or "child" in name:
         return "junior"

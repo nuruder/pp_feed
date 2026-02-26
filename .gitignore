@@ -2,6 +2,7 @@ __pycache__/
 *.py[cod]
 .env
 data/
+!data/__init__.py
 !data/size_chart.py
 *.db
 *.xlsx
