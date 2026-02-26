@@ -53,6 +53,7 @@ class SizeSchema(BaseModel):
     size_label: str
     in_stock: bool
     quantity: int = 0
+    size_cm: float | None = None
 
     model_config = {"from_attributes": True}
 

@@ -321,7 +321,11 @@ async def webapp_product_detail(
     result = await db.execute(
         select(Product)
         .where(Product.id == product_id)
-        .options(selectinload(Product.sizes), selectinload(Product.categories))
+        .options(
+            selectinload(Product.sizes),
+            selectinload(Product.categories),
+            selectinload(Product.brand),
+        )
     )
     product = result.scalar_one_or_none()
     if not product:
@@ -333,6 +337,10 @@ async def webapp_product_detail(
     has_margin = any(_has_margin(snap.price_regular, snap.price_wholesale, cn) for cn in cat_names) if snap else False
     if not snap or not has_margin:
         raise HTTPException(404, "Product not available")
+
+    # Size chart: EU → cm lookup
+    from data.size_chart import get_size_cm
+    brand_name = product.brand.name if product.brand else None
 
     return WebAppProductDetail(
         id=product.id,
@@ -349,6 +357,7 @@ async def webapp_product_detail(
                 size_label=s.size_label,
                 in_stock=s.in_stock,
                 quantity=s.quantity,
+                size_cm=get_size_cm(brand_name, cat_names, s.size_label) if brand_name else None,
             )
             for s in product.sizes
         ],

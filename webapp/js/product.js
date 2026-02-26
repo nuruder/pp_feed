@@ -127,7 +127,8 @@ const ProductPage = {
                 const selected = this.selectedSize === s.size_label;
                 const cls = disabled ? 'size-btn disabled' : (selected ? 'size-btn selected' : 'size-btn');
                 const onclick = disabled ? '' : `onclick="ProductPage.selectSize('${s.size_label}')"`;
-                sizesHtml += `<button class="${cls}" ${onclick}>${s.size_label}</button>`;
+                const cmText = s.size_cm ? ` (${String(s.size_cm).replace('.', ',')}см)` : '';
+                sizesHtml += `<button class="${cls}" ${onclick}>${s.size_label}${cmText}</button>`;
             });
             sizesHtml += '</div></div>';
         }
