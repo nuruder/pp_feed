@@ -432,8 +432,6 @@ async def scrape_product_detail(
             await page.wait_for_load_state("networkidle", timeout=10000)
         except Exception:
             pass  # networkidle can timeout on pages with persistent connections
-        # Give dynamic content extra time to render
-        await asyncio.sleep(2)
     except Exception as e:
         logger.error("Failed to load %s: %s", product_url, e)
         return None
