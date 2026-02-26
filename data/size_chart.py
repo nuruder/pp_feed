@@ -185,10 +185,10 @@ def _detect_shoe_type(category_name: str) -> str | None:
     name = category_name.lower()
     if "junior" in name or "kid" in name or "child" in name:
         return "junior"
-    if "man" in name or "men" in name or "male" in name:
-        return "men"
     if "woman" in name or "women" in name or "female" in name:
         return "women"
+    if "man" in name or "men" in name or "male" in name:
+        return "men"
     return None
 
 
