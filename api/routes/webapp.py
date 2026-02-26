@@ -345,6 +345,10 @@ async def webapp_product_detail(
     size_cat_names = list(cat_names)
     if product.product_type and product.product_type.name:
         size_cat_names.append(product.product_type.name)
+    logger.info("SIZE_CM debug: brand=%s, cats=%s, product_type=%s, sizes=%s",
+                brand_name, cat_names,
+                product.product_type.name if product.product_type else None,
+                [s.size_label for s in product.sizes[:3]])
 
     return WebAppProductDetail(
         id=product.id,
